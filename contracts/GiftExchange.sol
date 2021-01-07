@@ -8,14 +8,17 @@
  * SPDX-License-Identifier: MIT
 **/
 
+// Make imports from the kleros SDK
 import "./IArbitrable.sol";
 import "./IArbitrator.sol";
+import "./IEvidence.sol";
 
-pragma solidity ^0.7.0;
+pragma solidity >=0.7.0;
+pragma experimental ABIEncoderV2;
 
-contract GiftExchange is IArbitrable {
+contract GiftExchange is IArbitrable, IEvidence {
 
-    // Contract state variables.
+    //====== Contract state variables. ======
 
     address owner; // temp variable for testing. Replace with a Gnosis multisig later.
     IArbitrator public arbitrator; // Initialize arbitrator in the constructor. Make immutable on deployment(?)
@@ -26,18 +29,16 @@ contract GiftExchange is IArbitrable {
 
 
 
-    // Data structures for the contract.
+    //===== Data structures for the contract. =====
 
-    enum Status {Uninitialized, Pending, Resolved, Reclaimed, Disputed, Appealed}
+    enum Party {None, Buyer ,Seller}
+    enum TransactionStatus {Pending, Reclaimed, Disputed, Appealed, Resolved}
+    enum DisputeStatus {None, WaitingSeller, WaitingReceiver, Resolved}
     enum RulingOptions {RefusedToArbitrate, SellerWins, BuyerWins}
-
-    event NewListing(address indexed seller, uint price, bytes32 cardID);
-    event NewTransaction(address indexed seller, address indexed buyer, bytes32 cardID);
-    event TransactionResolved (address indexed seller, address indexed buyer, bytes32 cardID);
-    event BuyerReclaim(address indexed seller, address indexed buyer, bytes32 _cardID);
+    
 
     struct Card {
-        bytes32 id;
+        bytes32 cardID;
         uint price;
         uint created_at;
         bool forSale;
@@ -48,29 +49,49 @@ contract GiftExchange is IArbitrable {
         string cardInfo_URI;
     }
 
+    struct TransactionDispute {
+        
+        bytes32 cardID;
+        DisputeStatus status;
+
+        bool buyerPaidFee;
+        bool sellerPaidFee;
+
+        uint arbitrationFee;
+
+        uint createdAt;
+    }
+
     struct Transaction {
-        Status status;
+        TransactionStatus status;
         
         uint init;
-        uint reclaimedAt;
-        uint disputedAt;
-
         uint disputeID;
-
-        uint buyer_arbitration_fee;
-        uint seller_arbitration_fee;
 
         uint locked_price_amount;
     }
 
+    // Events for state updates, along with the relevant, new state value. 
+    event NewListing(bytes32 cardID, Card card);
+    event NewTransaction(bytes32 cardID, Transaction transaction);
+    event TransactionResolved (address indexed seller, address indexed buyer, bytes32 cardID);
+
+    // Events that signal one or the other party to take an action / notify about a deadline, etc.
+    event HasToPayArbitrationFee(bytes32 cardID, Party party);
+
     mapping(bytes32 => Card) public cards;
-    mapping(bytes32 => Transaction) public transactions;
+    mapping(uint => Transaction) public transactions;
+    mapping(bytes32 => uint) public cardID_to_txID;
+
     mapping(address => bytes32[]) public sellerListings;
+    mapping(bytes32 => bool) public validIDs;
 
     mapping(uint => bytes32) public disputes;
-    mapping(bytes32 => RulingOptions) public dispute_ruling;
+    mapping(bytes32 => TransactionDispute) public disputeReceipts;
+    mapping(uint => RulingOptions) public dispute_ruling;
 
     bytes32[] id_store;
+    bytes32[] tx_hashes;
 
     constructor(IArbitrator _arbitrator, address _owner) { // Flesh out as and when.
         arbitrator = _arbitrator;
@@ -108,6 +129,13 @@ contract GiftExchange is IArbitrable {
 
     // Contract main functions
 
+    modifier OnlyValidTransaction(bytes32 _cardID) {
+
+        require(validIDs[_cardID], "The card ID is invalid i.e. does not exist on the contract database.");
+
+        _;
+    }
+
     /**
      * @dev Let's a user list a gift card for sale.
      
@@ -123,7 +151,7 @@ contract GiftExchange is IArbitrable {
         sellerListings[msg.sender].push(newID);
 
         Card memory newCard = Card({
-            id: newID,
+            cardID: newID,
             price: _price,
             created_at: block.timestamp,
             forSale: true,
@@ -133,7 +161,7 @@ contract GiftExchange is IArbitrable {
         });
         cards[newID] = newCard;
 
-        emit NewListing(msg.sender, _price, newID);
+        emit NewListing(newID, newCard);
     }
 
     /**
@@ -142,13 +170,7 @@ contract GiftExchange is IArbitrable {
      * @param _cardID The unique ID of the gift card being purchased.
     **/
 
-    function buyCard(bytes32 _cardID) external payable {
-
-        uint id_available = 0;
-        for(uint i = 0; i < id_store.length; i++) {
-            if(_cardID == id_store[i]) id_available++;
-        }
-        require(id_available == 1, "The id is not available on the contract database.");
+    function buyCard(bytes32 _cardID, string calldata _metaevidence) external payable OnlyValidTransaction(_cardID) {
 
         require(cards[_cardID].forSale, "The sellser has listed the gift card as not for sale, and so, cannot be purchased.");
         require(msg.value == cards[_cardID].price, "Must send exactly the gift card price.");
@@ -157,19 +179,22 @@ contract GiftExchange is IArbitrable {
         cards[_cardID].buyer = msg.sender;
 
         Transaction memory newTransaction = Transaction({
-            status: Status.Uninitialized,
+            status: TransactionStatus.Pending,
+
             init: block.timestamp,
-            reclaimedAt: 0,
-            disputedAt: 0,
             disputeID: 0,
-            buyer_arbitration_fee: 0,
-            seller_arbitration_fee: 0,
+
             locked_price_amount: msg.value
         });
 
-        transactions[_cardID] = newTransaction;
-        
-        emit NewTransaction(cards[_cardID].seller, msg.sender, _cardID);
+        tx_hashes.push(hashTransactionState(newTransaction));
+        uint transactionID = tx_hashes.length;
+
+        cardID_to_txID[_cardID] = transactionID;
+        transactions[transactionID] = newTransaction;
+
+        emit NewTransaction(_cardID, newTransaction);
+        emit MetaEvidence(transactionID, _metaevidence);
     }
 
     /**
@@ -178,16 +203,16 @@ contract GiftExchange is IArbitrable {
      * @param _cardID The unique ID of the gift card in concern.
     **/
 
-    function withdrawPrice(bytes32 _cardID) external {
+    function withdrawPrice(bytes32 _cardID) external OnlyValidTransaction(_cardID) {
 
-        Transaction storage transaction = transactions[_cardID];
+        Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
 
         // Write a succint filter statement later.
         require(msg.sender == cards[_cardID].seller, "Only the seller can withdraw the price of the card.");
         require(block.timestamp - transaction.init > reclaimPeriod, "Cannot withdraw price while reclaim period is not over.");
-        require(transaction.status == Status.Pending, "Can only withdraw price if the transaction is in the pending state.");
+        require(transaction.status == TransactionStatus.Pending, "Can only withdraw price if the transaction is in the pending state.");
 
-        transaction.status = Status.Resolved;
+        transaction.status = TransactionStatus.Resolved;
         msg.sender.transfer(transaction.locked_price_amount);
         transaction.locked_price_amount = 0;
 
@@ -199,29 +224,130 @@ contract GiftExchange is IArbitrable {
     
      * @param _cardID The unique ID of the gift card in concern.
     **/
-    function reclaimPrice(bytes32 _cardID) external payable {
+    function reclaimPrice(bytes32 _cardID) external payable OnlyValidTransaction(_cardID) { 
 
-        // Write succint filter statement
         require(msg.sender == cards[_cardID].buyer, "Only the buyer of the card can reclaim the price paid.");
-        require(block.timestamp - transactions[_cardID].init < reclaimPeriod, "Cannot reclaim price after the reclaim window is closed.");
-        // require(transactions[_cardID].status == Status.Pending, "Can reclaim price only in pending state.");
+        require(block.timestamp - transactions[cardID_to_txID[_cardID]].init < reclaimPeriod, "Cannot reclaim price after the reclaim window is closed.");
+        require(transactions[cardID_to_txID[_cardID]].status == TransactionStatus.Pending, "Can reclaim price only in pending state.");
 
         uint arbitrationCost = arbitrator.arbitrationCost(""); // What is passed in for extraData?
         require(msg.value == arbitrationCost, "Must deposit the right arbitration fee to reclaim paid price.");
 
-        transactions[_cardID].buyer_arbitration_fee = msg.value;
-        transactions[_cardID].reclaimedAt = block.timestamp;
+        transactions[cardID_to_txID[_cardID]].status = TransactionStatus.Reclaimed;
 
-        emit BuyerReclaim(cards[_cardID].seller, msg.sender, _cardID);
+        TransactionDispute memory transactionDispute = TransactionDispute({
+            cardID: _cardID,
+            status: DisputeStatus.WaitingSeller,
+
+            buyerPaidFee: true,
+            sellerPaidFee: false,
+            arbitrationFee: msg.value,
+
+            createdAt: block.timestamp
+        });
+
+        disputeReceipts[_cardID] = transactionDispute;
+
+        emit HasToPayArbitrationFee(_cardID, Party.Seller);
     }
 
-    /**
-     * @dev Let's the buyer (post reclaim period) / seller dispute the transaction by depositing arbitration fee.
     
-     * @param _cardID The unique ID of the gift card in concern.
-    **/
-    function disputeTransaction(bytes32 _cardID) external payable {
 
+    // Seller engage with dispute fn.
+
+    function SellerPayArbitrationFee(bytes32 _cardID) public payable {
+
+        Card storage card = cards[_cardID];
+        Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
+
+        uint arbitrationCost = arbitrator.arbitrationCost("");
+        require(msg.value >= arbitrationCost, "Must send at least arbitration cost to create dispute.");
+        require(
+            transaction.status == TransactionStatus.Pending, 
+            "The transaction cannot be disputed once already disputed; it can only be appealed."
+        );
+
+        if(transaction.status == TransactionStatus.Disputed) {
+            disputeReceipts[_cardID].arbitrationFee += msg.value;
+            disputeReceipts[_cardID].sellerPaidFee = true;
+
+            require(disputeReceipts[_cardID].buyerPaidFee, "This should be impossible."); // testing purposes
+
+            raiseDispute(_cardID, arbitrationCost);
+
+        } else {
+            
+            transaction.status = TransactionStatus.Disputed;
+            TransactionDispute memory transactionDispute = TransactionDispute({
+                cardID: _cardID,
+                status: DisputeStatus.WaitingSeller,
+
+                buyerPaidFee: false,
+                sellerPaidFee: true,
+                arbitrationFee: msg.value,
+
+                createdAt: block.timestamp
+            });
+
+            disputeReceipts[_cardID] = transactionDispute;
+
+            emit HasToPayArbitrationFee(_cardID, Party.Buyer);
+        }
+    }
+
+
+    function BuyerPayArbitrationFee(bytes32 _cardID) public payable {
+
+        Card storage card = cards[_cardID];
+        Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
+
+        uint arbitrationCost = arbitrator.arbitrationCost("");
+        require(msg.value >= arbitrationCost, "Must send at least arbitration cost to create dispute.");
+        require(
+            transaction.status == TransactionStatus.Pending, 
+            "The transaction cannot be disputed once already disputed; it can only be appealed."
+        );
+
+        if(transaction.status == TransactionStatus.Disputed) {
+            disputeReceipts[_cardID].arbitrationFee += msg.value;
+            disputeReceipts[_cardID].sellerPaidFee = true;
+
+            require(disputeReceipts[_cardID].buyerPaidFee, "This should be impossible."); // testing purposes
+
+            raiseDispute(_cardID, arbitrationCost);
+
+        } else {
+            
+            transaction.status = TransactionStatus.Disputed;
+            TransactionDispute memory transactionDispute = TransactionDispute({
+                cardID: _cardID,
+                status: DisputeStatus.WaitingSeller,
+
+                buyerPaidFee: true,
+                sellerPaidFee: false,
+                arbitrationFee: msg.value,
+
+                createdAt: block.timestamp
+            });
+
+            disputeReceipts[_cardID] = transactionDispute;
+
+            emit HasToPayArbitrationFee(_cardID, Party.Seller);
+        }
+    }
+
+    
+
+    // raiseDispute internal function
+
+    function raiseDispute(bytes32 _cardID, uint _arbitrationCost) internal {
+
+        Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
+
+        transaction.status = TransactionStatus.Disputed;
+        transaction.disputeID = arbitrator.createDispute{value: _arbitrationCost}(numOfRulingOptions, "");
+
+        disputes[transaction.disputeID] = _cardID;
     }
 
     /**
@@ -231,7 +357,7 @@ contract GiftExchange is IArbitrable {
     **/
 
     function appealTransaction(bytes32 _cardID) external payable {
-
+        // appeal period start / end checked by calling the arbitrator
     }
 
     // Implementation of the rule() function from IArbitrable.
@@ -246,24 +372,47 @@ contract GiftExchange is IArbitrable {
         if(_ruling == uint(RulingOptions.BuyerWins)) {
             // add security checks (re-entrancy checks)
 
-            uint refundAmount = transactions[id].buyer_arbitration_fee + transactions[id].locked_price_amount;
-            address payable buyer = cards[id].buyer;
-
-            buyer.transfer(refundAmount); // check what the right method is + check units.
+            //
         }
 
         if(_ruling == uint(RulingOptions.SellerWins)) {
             // add security checks (re-entrancy checks)
 
-            uint refundAmount = transactions[id].seller_arbitration_fee + transactions[id].locked_price_amount;
-            address payable seller = cards[id].seller;
-
-            seller.transfer(refundAmount); // check what the right method is + check units.
+            //
         }
 
         if(_ruling == uint(RulingOptions.RefusedToArbitrate)) {
             //think about this. 
         }
+    }
+
+    function submiteEvidence(bytes32 _cardID, string calldata _evidence) public OnlyValidTransaction(_cardID) {
+
+        Transaction memory transaction = transactions[cardID_to_txID[_cardID]];
+        Card memory card = cards[_cardID];
+
+        require(
+            msg.sender == card.seller || msg.sender == card.buyer,
+            "The caller must be the seller or the buyer."
+        );
+        require(
+            transaction.status == TransactionStatus.Disputed || transaction.status == TransactionStatus.Appealed,
+            "Must not send evidence if the dispute is resolved."
+        );
+
+        emit Evidence(arbitrator, cardID_to_txID[_cardID], msg.sender, _evidence);
+    }
+
+    function hashTransactionState(Transaction memory transaction) public pure returns (bytes32) {
+        
+        return keccak256(
+            abi.encodePacked(
+                transaction.status,
+                transaction.init,
+                transaction.disputeID,
+                transaction.locked_price_amount
+            )
+        );
     }
 }
 
