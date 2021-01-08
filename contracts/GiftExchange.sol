@@ -365,19 +365,6 @@ contract GiftExchange is IArbitrable, IEvidence {
      * @param _cardID The unique ID of the gift card in concern.
     **/
 
-    // struct TransactionAppeal {
-    //     uint appealRound;
-
-    //     uint buyerFee;
-    //     uint sellerFee;
-    //     DisputeStatus status;
-
-    //     uint appealFee;
-
-    //     uint createdAt;
-    //     uint deadline;
-    // }
-
     function payAppealFeeBySeller(bytes32 _cardID) public payable {
         // appeal period start / end checked by calling the arbitrator
         Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
@@ -465,25 +452,43 @@ contract GiftExchange is IArbitrable, IEvidence {
     function rule(uint256 _disputeID, uint256 _ruling) external override {
 
         require(msg.sender == address(arbitrator), "Only the arbitrator can give a ruling.");
-        emit Ruling(arbitrator, _disputeID, _ruling);
 
-        // bytes32 id = disputes[_disputeID];
+        bytes32 cardID = disputes[_disputeID];
+        Card memory card = cards[cardID];
+        Transaction memory transaction = transactions[cardID_to_txID[cardID]];
+
+        uint refundAmount;
+
+        if(_ruling > uint(RulingOptions.RefusedToArbitrate)) {
+            transaction.status = TransactionStatus.Resolved;
+            refundAmount += transaction.locked_price_amount;
+            transaction.locked_price_amount = 0;
+        }
 
         if(_ruling == uint(RulingOptions.BuyerWins)) {
-            // add security checks (re-entrancy checks)
-
-            //
+            
+            refundAmount += disputeReceipts[cardID].buyerFee;
+            refundAmount += appealReceipts[cardID].buyerFee;
+            
+            card.buyer.transfer(refundAmount);
         }
 
         if(_ruling == uint(RulingOptions.SellerWins)) {
-            // add security checks (re-entrancy checks)
-
-            //
+            refundAmount += disputeReceipts[cardID].sellerFee;
+            refundAmount += appealReceipts[cardID].sellerFee;
+            
+            card.seller.transfer(refundAmount);
         }
 
         if(_ruling == uint(RulingOptions.RefusedToArbitrate)) {
-            //think about this. 
+            refundAmount += disputeReceipts[cardID].arbitrationFee;
+            refundAmount += appealReceipts[cardID].appealFee;
+
+            card.seller.transfer(refundAmount / 2);
+            card.buyer.transfer(refundAmount / 2);
         }
+
+        emit Ruling(arbitrator, _disputeID, _ruling);
     }
 
     function submiteEvidence(bytes32 _cardID, string calldata _evidence) public OnlyValidTransaction(_cardID) {
