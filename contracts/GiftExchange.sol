@@ -34,12 +34,12 @@ contract GiftExchange is IArbitrable, IEvidence {
     enum Party {None, Buyer ,Seller}
     enum TransactionStatus {Pending, Reclaimed, Disputed, Appealed, Resolved}
     // Don't forget to set dispute statuses
-    enum DisputeStatus {None, WaitingSeller, WaitingReceiver, InProcess, Resolved}
+    enum DisputeStatus {None, WaitingSeller, WaitingBuyer, InProcess, Resolved}
     enum RulingOptions {RefusedToArbitrate, SellerWins, BuyerWins}
     
 
     struct Card {
-        bytes32 cardID;
+        bytes32 cardID; // redundant? (Think of optimizing storage)
         uint price;
         uint created_at;
         bool forSale;
@@ -48,6 +48,15 @@ contract GiftExchange is IArbitrable, IEvidence {
         address payable buyer;
 
         string cardInfo_URI;
+    }
+
+    struct Transaction {
+        TransactionStatus status;
+        
+        uint init;
+        uint disputeID;
+
+        uint locked_price_amount;
     }
 
     struct TransactionDispute {
@@ -63,14 +72,19 @@ contract GiftExchange is IArbitrable, IEvidence {
         uint createdAt;
     }
 
-    struct Transaction {
-        TransactionStatus status;
-        
-        uint init;
-        uint disputeID;
+    struct TransactionAppeal {
+        uint appealRound;
 
-        uint locked_price_amount;
+        uint buyerFee;
+        uint sellerFee;
+        DisputeStatus status;
+
+        uint appealFee;
+
+        uint createdAt;
+        uint deadline;
     }
+
 
     // Events for state updates, along with the relevant, new state value. 
     event NewListing(bytes32 cardID, Card card);
@@ -79,6 +93,10 @@ contract GiftExchange is IArbitrable, IEvidence {
 
     // Events that signal one or the other party to take an action / notify about a deadline, etc.
     event HasToPayArbitrationFee(bytes32 cardID, Party party);
+    event HasPaidArbitrationFee(bytes32 cardID, Party party);
+
+    event HasToPayAppealFee(bytes32 cardID, Party party);
+    event HasPaidAppealFee(bytes32 cardID, Party party);
 
     mapping(bytes32 => Card) public cards;
     mapping(uint => Transaction) public transactions;
@@ -89,6 +107,7 @@ contract GiftExchange is IArbitrable, IEvidence {
 
     mapping(uint => bytes32) public disputes;
     mapping(bytes32 => TransactionDispute) public disputeReceipts;
+    mapping(bytes32 => TransactionAppeal) public appealReceipts; 
     mapping(uint => RulingOptions) public dispute_ruling;
 
     bytes32[] id_store;
@@ -277,7 +296,7 @@ contract GiftExchange is IArbitrable, IEvidence {
         transactionDispute.sellerFee += msg.value;
 
         if(transactionDispute.buyerFee < arbitrationCost) {
-            transactionDispute.status = DisputeStatus.WaitingReceiver;
+            transactionDispute.status = DisputeStatus.WaitingBuyer;
             emit HasToPayArbitrationFee(_cardID, Party.Buyer);
         } else {
             raiseDispute(_cardID, arbitrationCost, transaction, transactionDispute);
@@ -300,7 +319,7 @@ contract GiftExchange is IArbitrable, IEvidence {
         transactionDispute.buyerFee += msg.value;
 
         if(transactionDispute.sellerFee < arbitrationCost) {
-            transactionDispute.status = DisputeStatus.WaitingReceiver;
+            transactionDispute.status = DisputeStatus.WaitingBuyer;
             emit HasToPayArbitrationFee(_cardID, Party.Seller);
         } else {
             raiseDispute(_cardID, arbitrationCost, transaction, transactionDispute);
@@ -346,8 +365,99 @@ contract GiftExchange is IArbitrable, IEvidence {
      * @param _cardID The unique ID of the gift card in concern.
     **/
 
-    function appealTransaction(bytes32 _cardID) external payable {
+    // struct TransactionAppeal {
+    //     uint appealRound;
+
+    //     uint buyerFee;
+    //     uint sellerFee;
+    //     DisputeStatus status;
+
+    //     uint appealFee;
+
+    //     uint createdAt;
+    //     uint deadline;
+    // }
+
+    function payAppealFeeBySeller(bytes32 _cardID) public payable {
         // appeal period start / end checked by calling the arbitrator
+        Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
+        TransactionAppeal storage transactionAppeal = appealReceipts[_cardID];
+        require(transaction.status >= TransactionStatus.Disputed, "There is no dispute to appeal.");
+
+        (uint256 appealPeriodStart, uint256 appealPeriodEnd) = arbitrator.appealPeriod(transaction.disputeID);
+        require(
+            block.timestamp >= appealPeriodStart && block.timestamp < appealPeriodEnd, 
+            "Funding must be made within the appeal period."
+        );
+
+        uint256 appealCost = arbitrator.appealCost(transaction.disputeID, "");
+        require(msg.value >= appealCost - transactionAppeal.sellerFee, "Not paying sufficient appeal fee.");
+
+        transactionAppeal.sellerFee += msg.value;
+        transactionAppeal.appealFee += msg.value;
+
+        if(transactionAppeal.buyerFee < appealCost) {
+            transactionAppeal.status = DisputeStatus.WaitingBuyer;
+            emit HasToPayAppealFee(_cardID, Party.Buyer);
+        } else {
+            transactionAppeal.appealRound++;
+         }
+    }
+
+    function payAppealFeeByBuyer(bytes32 _cardID) public payable {
+        // appeal period start / end checked by calling the arbitrator
+        Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
+        TransactionAppeal storage transactionAppeal = appealReceipts[_cardID];
+        require(transaction.status >= TransactionStatus.Disputed, "There is no dispute to appeal.");
+
+        (uint256 appealPeriodStart, uint256 appealPeriodEnd) = arbitrator.appealPeriod(transaction.disputeID);
+        require(
+            block.timestamp >= appealPeriodStart && block.timestamp < appealPeriodEnd, 
+            "Funding must be made within the appeal period."
+        );
+
+        uint256 appealCost = arbitrator.appealCost(transaction.disputeID, "");
+        require(msg.value >= appealCost - transactionAppeal.buyerFee, "Not paying sufficient appeal fee.");
+
+        transactionAppeal.buyerFee += msg.value;
+        transactionAppeal.appealFee += msg.value;
+
+        if(transactionAppeal.sellerFee < appealCost) {
+            transactionAppeal.status = DisputeStatus.WaitingSeller;
+            emit HasToPayAppealFee(_cardID, Party.Seller);
+        } else {
+            transactionAppeal.appealRound++;
+        }
+    }
+
+    function appealTransaction(
+        bytes32 _cardID,
+        uint _appealCost,
+        Transaction memory _transaction,
+        TransactionAppeal memory _transactionAppeal
+        ) internal {
+        
+        _transactionAppeal.appealRound++;
+        _transaction.status = TransactionStatus.Appealed;
+        arbitrator.createDispute{value: _appealCost}(_transaction.disputeID, "");
+
+        _transactionAppeal.status = DisputeStatus.InProcess;
+
+        disputes[_transaction.disputeID] = _cardID;
+
+        // Seller | Buyer fee reimbursements.
+
+        if(_transactionAppeal.sellerFee > _appealCost) {
+            uint extraFee = _transactionAppeal.sellerFee - _appealCost;
+            _transactionAppeal.sellerFee = _appealCost;
+            cards[_cardID].seller.transfer(extraFee);
+        }
+
+        if(_transactionAppeal.buyerFee > _appealCost) {
+            uint extraFee = _transactionAppeal.buyerFee - _appealCost;
+            _transactionAppeal.buyerFee = _appealCost;
+            cards[_cardID].buyer.transfer(extraFee);
+        }
     }
 
     // Implementation of the rule() function from IArbitrable.
@@ -357,7 +467,7 @@ contract GiftExchange is IArbitrable, IEvidence {
         require(msg.sender == address(arbitrator), "Only the arbitrator can give a ruling.");
         emit Ruling(arbitrator, _disputeID, _ruling);
 
-        bytes32 id = disputes[_disputeID];
+        // bytes32 id = disputes[_disputeID];
 
         if(_ruling == uint(RulingOptions.BuyerWins)) {
             // add security checks (re-entrancy checks)
