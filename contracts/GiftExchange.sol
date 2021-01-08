@@ -33,7 +33,8 @@ contract GiftExchange is IArbitrable, IEvidence {
 
     enum Party {None, Buyer ,Seller}
     enum TransactionStatus {Pending, Reclaimed, Disputed, Appealed, Resolved}
-    enum DisputeStatus {None, WaitingSeller, WaitingReceiver, Resolved}
+    // Don't forget to set dispute statuses
+    enum DisputeStatus {None, WaitingSeller, WaitingReceiver, InProcess, Resolved}
     enum RulingOptions {RefusedToArbitrate, SellerWins, BuyerWins}
     
 
@@ -54,8 +55,8 @@ contract GiftExchange is IArbitrable, IEvidence {
         bytes32 cardID;
         DisputeStatus status;
 
-        bool buyerPaidFee;
-        bool sellerPaidFee;
+        uint buyerFee;
+        uint sellerFee;
 
         uint arbitrationFee;
 
@@ -187,11 +188,23 @@ contract GiftExchange is IArbitrable, IEvidence {
             locked_price_amount: msg.value
         });
 
+        TransactionDispute memory transactionDispute = TransactionDispute({
+            cardID: _cardID,
+            status: DisputeStatus.None,
+
+            buyerFee: 0,
+            sellerFee: 0,
+            arbitrationFee: 0,
+
+            createdAt: 0
+        });
+
         tx_hashes.push(hashTransactionState(newTransaction));
         uint transactionID = tx_hashes.length;
 
         cardID_to_txID[_cardID] = transactionID;
         transactions[transactionID] = newTransaction;
+        disputeReceipts[_cardID] = transactionDispute;
 
         emit NewTransaction(_cardID, newTransaction);
         emit MetaEvidence(transactionID, _metaevidence);
@@ -235,18 +248,12 @@ contract GiftExchange is IArbitrable, IEvidence {
 
         transactions[cardID_to_txID[_cardID]].status = TransactionStatus.Reclaimed;
 
-        TransactionDispute memory transactionDispute = TransactionDispute({
-            cardID: _cardID,
-            status: DisputeStatus.WaitingSeller,
+        TransactionDispute storage transactionDispute = disputeReceipts[_cardID];
 
-            buyerPaidFee: true,
-            sellerPaidFee: false,
-            arbitrationFee: msg.value,
-
-            createdAt: block.timestamp
-        });
-
-        disputeReceipts[_cardID] = transactionDispute;
+        transactionDispute.status = DisputeStatus.WaitingSeller;
+        transactionDispute.buyerFee = msg.value;
+        transactionDispute.arbitrationFee = msg.value;
+        transactionDispute.createdAt = block.timestamp;
 
         emit HasToPayArbitrationFee(_cardID, Party.Seller);
     }
@@ -255,84 +262,48 @@ contract GiftExchange is IArbitrable, IEvidence {
 
     // Seller engage with dispute fn.
 
-    function SellerPayArbitrationFee(bytes32 _cardID) public payable {
+    function payArbitrationFeeBySeller(bytes32 _cardID) public payable {
 
-        Card storage card = cards[_cardID];
+        TransactionDispute storage transactionDispute = disputeReceipts[_cardID];
         Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
 
         uint arbitrationCost = arbitrator.arbitrationCost("");
-        require(msg.value >= arbitrationCost, "Must send at least arbitration cost to create dispute.");
         require(
-            transaction.status == TransactionStatus.Pending, 
-            "The transaction cannot be disputed once already disputed; it can only be appealed."
+            msg.value >= (arbitrationCost - transactionDispute.sellerFee), 
+            "Must send at least arbitration cost to create dispute."
         );
+        
+        transactionDispute.arbitrationFee += msg.value;
+        transactionDispute.sellerFee += msg.value;
 
-        if(transaction.status == TransactionStatus.Disputed) {
-            disputeReceipts[_cardID].arbitrationFee += msg.value;
-            disputeReceipts[_cardID].sellerPaidFee = true;
-
-            require(disputeReceipts[_cardID].buyerPaidFee, "This should be impossible."); // testing purposes
-
-            raiseDispute(_cardID, arbitrationCost);
-
-        } else {
-            
-            transaction.status = TransactionStatus.Disputed;
-            TransactionDispute memory transactionDispute = TransactionDispute({
-                cardID: _cardID,
-                status: DisputeStatus.WaitingSeller,
-
-                buyerPaidFee: false,
-                sellerPaidFee: true,
-                arbitrationFee: msg.value,
-
-                createdAt: block.timestamp
-            });
-
-            disputeReceipts[_cardID] = transactionDispute;
-
+        if(transactionDispute.buyerFee < arbitrationCost) {
+            transactionDispute.status = DisputeStatus.WaitingReceiver;
             emit HasToPayArbitrationFee(_cardID, Party.Buyer);
+        } else {
+            raiseDispute(_cardID, arbitrationCost, transaction, transactionDispute);
         }
     }
 
 
-    function BuyerPayArbitrationFee(bytes32 _cardID) public payable {
+    function payArbitrationFeeByBuyer(bytes32 _cardID) public payable {
 
-        Card storage card = cards[_cardID];
+        TransactionDispute storage transactionDispute = disputeReceipts[_cardID];
         Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
 
         uint arbitrationCost = arbitrator.arbitrationCost("");
-        require(msg.value >= arbitrationCost, "Must send at least arbitration cost to create dispute.");
         require(
-            transaction.status == TransactionStatus.Pending, 
-            "The transaction cannot be disputed once already disputed; it can only be appealed."
+            msg.value >= (arbitrationCost - transactionDispute.buyerFee), 
+            "Must send at least arbitration cost to create dispute."
         );
+        
+        transactionDispute.arbitrationFee += msg.value;
+        transactionDispute.buyerFee += msg.value;
 
-        if(transaction.status == TransactionStatus.Disputed) {
-            disputeReceipts[_cardID].arbitrationFee += msg.value;
-            disputeReceipts[_cardID].sellerPaidFee = true;
-
-            require(disputeReceipts[_cardID].buyerPaidFee, "This should be impossible."); // testing purposes
-
-            raiseDispute(_cardID, arbitrationCost);
-
-        } else {
-            
-            transaction.status = TransactionStatus.Disputed;
-            TransactionDispute memory transactionDispute = TransactionDispute({
-                cardID: _cardID,
-                status: DisputeStatus.WaitingSeller,
-
-                buyerPaidFee: true,
-                sellerPaidFee: false,
-                arbitrationFee: msg.value,
-
-                createdAt: block.timestamp
-            });
-
-            disputeReceipts[_cardID] = transactionDispute;
-
+        if(transactionDispute.sellerFee < arbitrationCost) {
+            transactionDispute.status = DisputeStatus.WaitingReceiver;
             emit HasToPayArbitrationFee(_cardID, Party.Seller);
+        } else {
+            raiseDispute(_cardID, arbitrationCost, transaction, transactionDispute);
         }
     }
 
@@ -340,14 +311,33 @@ contract GiftExchange is IArbitrable, IEvidence {
 
     // raiseDispute internal function
 
-    function raiseDispute(bytes32 _cardID, uint _arbitrationCost) internal {
+    function raiseDispute(
+        bytes32 _cardID,
+        uint _arbitrationCost,
+        Transaction memory _transaction,
+        TransactionDispute memory _transactionDispute
+        ) internal {
 
-        Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
+        _transaction.status = TransactionStatus.Disputed;
+        _transaction.disputeID = arbitrator.createDispute{value: _arbitrationCost}(numOfRulingOptions, "");
 
-        transaction.status = TransactionStatus.Disputed;
-        transaction.disputeID = arbitrator.createDispute{value: _arbitrationCost}(numOfRulingOptions, "");
+        _transactionDispute.status = DisputeStatus.InProcess;
 
-        disputes[transaction.disputeID] = _cardID;
+        disputes[_transaction.disputeID] = _cardID;
+
+        // Seller | Buyer fee reimbursements.
+
+        if(_transactionDispute.sellerFee > _arbitrationCost) {
+            uint extraFee = _transactionDispute.sellerFee - _arbitrationCost;
+            _transactionDispute.sellerFee = _arbitrationCost;
+            cards[_cardID].seller.transfer(extraFee);
+        }
+
+        if(_transactionDispute.buyerFee > _arbitrationCost) {
+            uint extraFee = _transactionDispute.buyerFee - _arbitrationCost;
+            _transactionDispute.buyerFee = _arbitrationCost;
+            cards[_cardID].buyer.transfer(extraFee);
+        }
     }
 
     /**
