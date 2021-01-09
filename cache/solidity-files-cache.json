@@ -1,0 +1,222 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "C:\\Users\\krish\\OneDrive\\Desktop\\gcexchange\\contracts\\IArbitrable.sol": {
+      "lastModificationDate": 1609931296569,
+      "contentHash": "c0a614b26765542e610643b056f53353",
+      "sourceName": "contracts/IArbitrable.sol",
+      "solcConfig": {
+        "version": "0.7.3",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./IArbitrator.sol"
+      ],
+      "versionPragmas": [
+        ">=0.7"
+      ],
+      "artifacts": [
+        "IArbitrable"
+      ]
+    },
+    "C:\\Users\\krish\\OneDrive\\Desktop\\gcexchange\\contracts\\IArbitrator.sol": {
+      "lastModificationDate": 1610183109180,
+      "contentHash": "e18d3b2a3a7c07f5fec569e9973e5996",
+      "sourceName": "contracts/IArbitrator.sol",
+      "solcConfig": {
+        "version": "0.7.3",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./IArbitrable.sol"
+      ],
+      "versionPragmas": [
+        ">=0.7"
+      ],
+      "artifacts": [
+        "IArbitrator"
+      ]
+    },
+    "C:\\Users\\krish\\OneDrive\\Desktop\\gcexchange\\contracts\\Market.sol": {
+      "lastModificationDate": 1610191136189,
+      "contentHash": "0c67036c6b1ede9ee56d1b969e25c7a6",
+      "sourceName": "contracts/Market.sol",
+      "solcConfig": {
+        "version": "0.7.3",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./IArbitrable.sol",
+        "./IArbitrator.sol",
+        "./IEvidence.sol",
+        "hardhat/console.sol"
+      ],
+      "versionPragmas": [
+        ">=0.7.0"
+      ],
+      "artifacts": [
+        "Market"
+      ]
+    },
+    "C:\\Users\\krish\\OneDrive\\Desktop\\gcexchange\\contracts\\IEvidence.sol": {
+      "lastModificationDate": 1610011805020,
+      "contentHash": "6a835ab1fe9789ffad1bd9157fe8b3af",
+      "sourceName": "contracts/IEvidence.sol",
+      "solcConfig": {
+        "version": "0.7.3",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./IArbitrator.sol"
+      ],
+      "versionPragmas": [
+        ">=0.7"
+      ],
+      "artifacts": [
+        "IEvidence"
+      ]
+    },
+    "C:\\Users\\krish\\OneDrive\\Desktop\\gcexchange\\contracts\\SimpleCentralizedArbitrator.sol": {
+      "lastModificationDate": 1610183118419,
+      "contentHash": "b2decc04ca1b78fd8d8a048d93ca7ae1",
+      "sourceName": "contracts/SimpleCentralizedArbitrator.sol",
+      "solcConfig": {
+        "version": "0.7.3",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./IArbitrator.sol"
+      ],
+      "versionPragmas": [
+        ">=0.7"
+      ],
+      "artifacts": [
+        "SimpleCentralizedArbitrator"
+      ]
+    },
+    "C:\\Users\\krish\\OneDrive\\Desktop\\gcexchange\\node_modules\\hardhat\\console.sol": {
+      "lastModificationDate": 1609930738571,
+      "contentHash": "cc4777addd464ea56fa35b1c45df0591",
+      "sourceName": "hardhat/console.sol",
+      "solcConfig": {
+        "version": "0.7.3",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        ">=0.4.22 <0.9.0"
+      ],
+      "artifacts": [
+        "console"
+      ]
+    }
+  }
+}
