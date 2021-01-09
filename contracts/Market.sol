@@ -34,144 +34,81 @@ contract Market is IArbitrable, IEvidence {
     //===== Data structures for the contract. =====
 
     enum Party {None, Buyer ,Seller}
-    enum TransactionStatus {Pending, Reclaimed, Disputed, Appealed, Resolved}
-    // Don't forget to set dispute statuses
+    enum Status {None, Pending, Reclaimed, Disputed, Appealed, Resolved}
     enum DisputeStatus {None, WaitingSeller, WaitingBuyer, InProcess, Resolved}
     enum RulingOptions {RefusedToArbitrate, SellerWins, BuyerWins}
     
 
-    struct Card {
-        bytes32 cardID; // redundant? (Think of optimizing storage)
+    struct Transaction {
         uint price;
-        uint created_at;
         bool forSale;
 
         address payable seller;
         address payable buyer;
-
         string cardInfo_URI;
-    }
 
-    struct Transaction {
-        TransactionStatus status;
-        
+        Status status;
         uint init;
-        uint disputeID;
-
         uint locked_price_amount;
+
+        uint disputeID;
     }
 
-    struct TransactionDispute {
+    struct Arbitration {
         
-        bytes32 cardID;
+        uint transactionID;
         DisputeStatus status;
 
-        uint buyerFee;
-        uint sellerFee;
-
+        uint buyerArbitrationFee;
+        uint sellerArbitrationFee;
         uint arbitrationFee;
 
-        uint createdAt;
-    }
-
-    struct TransactionAppeal {
         uint appealRound;
 
-        uint buyerFee;
-        uint sellerFee;
-        DisputeStatus status;
-
+        uint buyerAppealFee;
+        uint sellerAppealFee;
         uint appealFee;
-
-        uint createdAt;
-        uint deadline;
+        
     }
 
-
-    // Events for state updates, along with the relevant, new state value. 
-    event NewListing(bytes32 cardID, Card card);
-    event NewTransaction(bytes32 cardID, Transaction transaction);
-    event TransactionResolved (address indexed seller, address indexed buyer, bytes32 cardID);
-
-    // Events that signal one or the other party to take an action / notify about a deadline, etc.
-    event HasToPayArbitrationFee(bytes32 cardID, Party party);
-    event HasPaidArbitrationFee(bytes32 cardID, Party party);
-
-    event HasToPayAppealFee(bytes32 cardID, Party party);
-    event HasPaidAppealFee(bytes32 cardID, Party party);
-
-    mapping(bytes32 => Card) public cards;
-    mapping(uint => Transaction) public transactions;
-    mapping(bytes32 => uint) public cardID_to_txID;
-
-    mapping(address => bytes32[]) public sellerListings;
-    mapping(bytes32 => bool) public validIDs; // ok
-
-    mapping(uint => bytes32) public disputes;
-    mapping(bytes32 => TransactionDispute) public disputeReceipts;
-    mapping(bytes32 => TransactionAppeal) public appealReceipts; 
-    mapping(uint => RulingOptions) public dispute_ruling;
-
-    bytes32[] public id_store;
     bytes32[] tx_hashes;
+
+    mapping(uint => bytes32) public ID_to_hash; // Necessary?
+    mapping(bytes32 => bool) public validTx; // Necessary?
+
+    mapping(uint => uint) public disputes;
+    mapping(uint => Arbitration) public arbitrations;
+
+    // Transaction level events 
+    event TransactionCreated(uint indexed transactionID, Transaction transaction);
+    event TransactionStateUpdate(uint indexed transactionID, Transaction transaction);
+    event TransactionResolved(uint indexed transactionID, Transaction transaction);
+
+    // Fee Payment reminders
+    event HasToPayArbitrationFee(uint indexed transactionID, Party party);
+    event HasPaidArbitrationFee(uint indexed transactionID, Party party);
+
+    event HasToPayAppealFee(uint indexed transactionID, Party party);
+    event HasPaidAppealFee(uint indexed transactionID, Party party);
+
+    // Dispute event from IERC 1497
+
+    
 
     constructor(address _arbitrator) { // Flesh out as and when.
         arbitrator = IArbitrator(_arbitrator);
         owner = msg.sender;
     }
 
-    
-    // Setter functions for contract state variables.
- 
-    function setReclaimationPeriod(uint _newPeriod) external {
-        require(msg.sender == owner, "Only the owner of the contract can change reclaim period.");
-        reclaimPeriod = _newPeriod;
-    }
-
-    function setArbitrationFeeDepositPeriod(uint _newPeriod) external {
-        require(msg.sender == owner, "Only the owner of the contract can change arbitration fee deposit period.");
-        arbitrationFeeDepositPeriod = _newPeriod;
-    }
-
-    function setNumOfRulingOptions(uint _newNumOfOptions) external {
-        require(msg.sender == owner, "Only the owner of the contract can change the number of ruling options.");
-        numOfRulingOptions = _newNumOfOptions;
-    }
-
-    function setCardPrice(bytes32 _cardID, uint _newPrice) external {
-        require(msg.sender == cards[_cardID].seller, "Only the owner of a card can set its price.");
-        cards[_cardID].price = _newPrice;
-    }
-
-    function setSaleSatus(bytes32 _cardID, bool _status) external {
-        require(msg.sender == cards[_cardID].seller, "Only the owner of a card can set its price.");
-        cards[_cardID].forSale = _status;
-    }
-
-    // Getters
-    // function getArbitrationCost() external view returns (uint) {
-    //     return arbitrator.arbitrationCost("");
-    // }
-
-    // function getSellerListings(address seller) external view returns(bytes32[] memory) {
-    //     return sellerListings[seller];
-    // }
-
-    // function getCard(bytes32 _cardID) external view returns(Card memory) {
-    //     return cards[_cardID];
-    // }
-
 
     // Contract main functions
 
-    modifier OnlyValidTransaction(bytes32 _cardID) {
+    modifier OnlyValidTransaction(uint _transactionID) {
 
-        require(validIDs[_cardID], "The card ID is invalid i.e. does not exist on the contract database.");
+        require(validTx[ID_to_hash[_transactionID]], "The card ID is invalid i.e. does not exist on the contract database.");
 
         _;
     }
-
-     bytes32 public stateID;
 
     /**
      * @dev Let's a user list a gift card for sale.
@@ -180,32 +117,35 @@ contract Market is IArbitrable, IEvidence {
      * @param _price The price set by the seller for the gift card.
     **/
 
-    function listNewCard(string calldata _cardInfo, uint _price) external returns (bytes32) {
-        
-        // VERY IMPORTANT - generates unique ID for a gift card.
-        bytes32 newID = keccak256(abi.encode(_cardInfo, msg.sender, block.timestamp)); 
-        
-        stateID = newID;
+    function listNewCard(string calldata _cardInfo, uint _price) external returns (uint transactionID) {
 
-        id_store.push(newID);
-        validIDs[newID] = true;
-        sellerListings[msg.sender].push(newID);
-
-        Card memory newCard = Card({
-            cardID: newID,
+        Transaction memory transaction = Transaction({
             price: _price,
-            created_at: block.timestamp,
             forSale: true,
+
             seller: msg.sender,
             buyer: address(0x0),
-            cardInfo_URI: _cardInfo
+            cardInfo_URI: _cardInfo,
+
+            status: Status.None,
+
+            init: 0,
+            locked_price_amount: 0,
+
+            disputeID: 0 
         });
-        cards[newID] = newCard;
 
-        emit NewListing(newID, newCard);
+        bytes32 tx_hash = hashTransactionState(newTransaction);
+        tx_hashes.push(tx_hash);
+        
+        transactionID = tx_hashes.length;
 
-        return newID;
+        ID_to_hash[transactionID] = tx_hash;
+        validTx[transactionID] = true;
+
+        emit TransactionCreated(transactionID, transaction);
     }
+
 
     /**
      * @dev Let's a user buy i.e. engage in the sale of a gift card.
@@ -213,43 +153,27 @@ contract Market is IArbitrable, IEvidence {
      * @param _cardID The unique ID of the gift card being purchased.
     **/
 
-    function buyCard(bytes32 _cardID, string calldata _metaevidence) external payable OnlyValidTransaction(_cardID) {
+    function buyCard(
+        uint _transactionID,
+        Transaction memory _transaction,
+        string calldata _metaevidence
+    ) external payable OnlyValidTransaction(_transactionID) {
 
-        require(cards[_cardID].forSale, "The sellser has listed the gift card as not for sale, and so, cannot be purchased.");
-        require(msg.value == cards[_cardID].price, "Must send exactly the gift card price.");
+        require(_transaction.status == Status.None, "Can't purchase an item already engaged in sale.");
+        require(_transaction.forSale, "Cannot purchase item not for sale.");
+        require(msg.value == _transaction.price, "Must send exactly the item price.");
 
-        cards[_cardID].forSale = false;
-        cards[_cardID].buyer = msg.sender;
+        validTx[hashTransactionState(_transaction)] = false;
 
-        Transaction memory newTransaction = Transaction({
-            status: TransactionStatus.Pending,
+        _transaction.status = Status.Pending;
+        _transaction.forSale = false;
+        _transaction.buyer = msg.sender;
+        _transaction.init = block.timestamp;
 
-            init: block.timestamp,
-            disputeID: 0,
+        updateTxHash(_transactionID, _transaction);
 
-            locked_price_amount: msg.value
-        });
-
-        TransactionDispute memory transactionDispute = TransactionDispute({
-            cardID: _cardID,
-            status: DisputeStatus.None,
-
-            buyerFee: 0,
-            sellerFee: 0,
-            arbitrationFee: 0,
-
-            createdAt: 0
-        });
-
-        tx_hashes.push(hashTransactionState(newTransaction));
-        uint transactionID = tx_hashes.length;
-
-        cardID_to_txID[_cardID] = transactionID;
-        transactions[transactionID] = newTransaction;
-        disputeReceipts[_cardID] = transactionDispute;
-
-        emit NewTransaction(_cardID, newTransaction);
-        emit MetaEvidence(transactionID, _metaevidence);
+        emit TransactionStateUpdate(_transactionID, _transaction);
+        emit MetaEvidence(_transactionID, _metaevidence);
     }
 
     /**
@@ -258,20 +182,27 @@ contract Market is IArbitrable, IEvidence {
      * @param _cardID The unique ID of the gift card in concern.
     **/
 
-    function withdrawPrice(bytes32 _cardID) external OnlyValidTransaction(_cardID) {
-
-        Transaction storage transaction = transactions[cardID_to_txID[_cardID]];
+    function withdrawPriceBySeller(
+        uint _transactionID,
+        Transaction memory _transaction
+        ) external OnlyValidTransaction(_transactionID) {
 
         // Write a succint filter statement later.
-        require(msg.sender == cards[_cardID].seller, "Only the seller can withdraw the price of the card.");
-        require(block.timestamp - transaction.init > reclaimPeriod, "Cannot withdraw price while reclaim period is not over.");
-        require(transaction.status == TransactionStatus.Pending, "Can only withdraw price if the transaction is in the pending state.");
+        require(msg.sender == _transaction.seller, "Only the seller can withdraw the price of the card.");
+        require(block.timestamp - _transaction.init > reclaimPeriod, "Cannot withdraw price while reclaim period is not over.");
+        require(transaction.status == Status.Pending, "Can only withdraw price if the transaction is in the pending state.");
 
-        transaction.status = TransactionStatus.Resolved;
-        msg.sender.transfer(transaction.locked_price_amount);
+        validTx[hashTransactionState(_transaction)] = false;
+
+        _transaction.status = TransactionStatus.Resolved;
+        
+        uint amount = _transaction.locked_price_amount;
         transaction.locked_price_amount = 0;
 
-        emit TransactionResolved(msg.sender, cards[_cardID].buyer, _cardID);
+        msg.sender.transfer(amount);
+
+        updateTxHash(_transactionID, _transaction);
+        emit TransactionResolved(_transactionID, _transaction);
     }
 
     /**
@@ -279,7 +210,10 @@ contract Market is IArbitrable, IEvidence {
     
      * @param _cardID The unique ID of the gift card in concern.
     **/
-    function reclaimPrice(bytes32 _cardID) external payable OnlyValidTransaction(_cardID) { 
+    function reclaimPriceByBuyer(
+        uint _transactionID,
+        Transaction memory _transaction
+        ) external OnlyValidTransaction(_transactionID) {
 
         require(msg.sender == cards[_cardID].buyer, "Only the buyer of the card can reclaim the price paid.");
         require(block.timestamp - transactions[cardID_to_txID[_cardID]].init < reclaimPeriod, "Cannot reclaim price after the reclaim window is closed.");
@@ -531,16 +465,64 @@ contract Market is IArbitrable, IEvidence {
         emit Evidence(arbitrator, cardID_to_txID[_cardID], msg.sender, _evidence);
     }
 
+    // Setter functions for contract state variables.
+ 
+    function setReclaimationPeriod(uint _newPeriod) external {
+        require(msg.sender == owner, "Only the owner of the contract can change reclaim period.");
+        reclaimPeriod = _newPeriod;
+    }
+
+    function setArbitrationFeeDepositPeriod(uint _newPeriod) external {
+        require(msg.sender == owner, "Only the owner of the contract can change arbitration fee deposit period.");
+        arbitrationFeeDepositPeriod = _newPeriod;
+    }
+
+    function setNumOfRulingOptions(uint _newNumOfOptions) external {
+        require(msg.sender == owner, "Only the owner of the contract can change the number of ruling options.");
+        numOfRulingOptions = _newNumOfOptions;
+    }
+
+    function setCardPrice(bytes32 _cardID, uint _newPrice) external {
+        require(msg.sender == cards[_cardID].seller, "Only the owner of a card can set its price.");
+        cards[_cardID].price = _newPrice;
+    }
+
+    function setSaleSatus(bytes32 _cardID, bool _status) external {
+        require(msg.sender == cards[_cardID].seller, "Only the owner of a card can set its price.");
+        cards[_cardID].forSale = _status;
+    }
+
+    // Utility functionss
+
     function hashTransactionState(Transaction memory transaction) public pure returns (bytes32) {
         
+        // Hash the whole transaction
+
         return keccak256(
             abi.encodePacked(
+                transaction.price,
+                transaction.forSale,
+
+                transaction.seller,
+                transaction.buyer,
+                transaction.cardInfo_URI,
+
                 transaction.status,
                 transaction.init,
-                transaction.disputeID,
-                transaction.locked_price_amount
+                transaction.locked_price_amount,
+
+                transaction.disputeID
             )
         );
+    }
+
+    function updateTxHash(uint _transactionID, Transaction memory _transaction) internal {
+        
+        bytes32 new_tx_hash = hashTransactionState(_transaction);
+
+        validTx[new_tx_hash] = true;
+        tx_hashes[_transactionID -1] = new_tx_hash;
+        ID_to_hash[_transactionID] = new_tx_hash;
     }
 }
 
