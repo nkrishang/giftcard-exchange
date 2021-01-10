@@ -8,15 +8,16 @@
  * SPDX-License-Identifier: MIT
 **/
 
+/**
 
+TO DO:
 
-// TO DO:
+- Write descriptions for contract data.
+- Hardhat tests
+- General cleanup of contract.
 
-// - Create storage reference `arbitration` variable wherever `arbitration` state is changed.
-// - Modify `withdrawBySeller` (analog: timeOutByBuyer) | Write `withdrawByBuyer` (analog: timeoutBySeller)
-// - Write `executeRuling`.
-// - Write function / data structure descriptions.
-// - General cleanup of contract.
+NOTE - As of now, the contract does not contain logic that sends 
+*/
 
 
 
@@ -34,11 +35,11 @@ contract Market is IArbitrable, IEvidence {
 
     //====== Contract state variables. ======
 
-    address public owner; // temp variable for testing. Replace with a Gnosis multisig later.
+    address public owner; // temp variable for testing (?)
     IArbitrator public arbitrator; // Initialize arbitrator in the constructor. Make immutable on deployment(?)
 
-    uint arbitrationFeeDepositPeriod = 1 days; // test value should be set much lower e.g. 2 minutes.
-    uint reclaimPeriod = 6 hours; // test value should be set much lower e.g. 2 minutes.
+    uint arbitrationFeeDepositPeriod = 1 days;
+    uint reclaimPeriod = 6 hours;
     uint numOfRulingOptions = 2;
 
 
@@ -46,9 +47,24 @@ contract Market is IArbitrable, IEvidence {
     //===== Data structures for the contract. =====
 
     enum Party {None, Buyer ,Seller}
-    enum Status {None, Pending, Reclaimed, Disputed, Appealed, Resolved}
+    enum Status {None, Pending, Disputed, Appealed, Resolved}
     enum DisputeStatus {None, WaitingSeller, WaitingBuyer, Processing, Resolved}
     enum RulingOptions {RefusedToArbitrate, SellerWins, BuyerWins}
+
+    // Transaction level events 
+    event TransactionCreated(uint indexed _transactionID, Transaction _transaction, Arbitration _arbitration);
+    event TransactionStateUpdate(uint indexed _transactionID, Transaction _transaction);
+    event TransactionResolved(uint indexed _transactionID, Transaction _transaction);
+
+    // Dispute level events (not defined in inherited interfaces)
+    event DisputeStateUpdate(uint indexed _disputeID, Arbitration _arbitration);
+
+    // Fee Payment notifications
+    event HasToPayArbitrationFee(uint indexed transactionID, Party party);
+    event HasPaidArbitrationFee(uint indexed transactionID, Party party);
+
+    event HasToPayAppealFee(uint indexed transactionID, Party party);
+    event HasPaidAppealFee(uint indexed transactionID, Party party);
     
 
     struct Transaction {
@@ -57,7 +73,7 @@ contract Market is IArbitrable, IEvidence {
 
         address payable seller;
         address payable buyer;
-        string cardInfo_URI;
+        bytes32 cardInfo_URI_hash;
 
         Status status;
         uint init;
@@ -70,7 +86,7 @@ contract Market is IArbitrable, IEvidence {
         
         uint transactionID;
         DisputeStatus status;
-        uint init;
+        uint feeDepositDeadline;
 
         uint buyerArbitrationFee;
         uint sellerArbitrationFee;
@@ -87,29 +103,9 @@ contract Market is IArbitrable, IEvidence {
 
     bytes32[] tx_hashes;
 
+    mapping(uint => Arbitration) public disputeID_to_arbitration;
 
-    mapping(uint => Arbitration arbitration) public disputeID_to_arbitration; // Necessary?
-    mapping(uint => Arbitration) public arbitrations; // Necessary?
-
-    // Transaction level events 
-    event TransactionCreated(uint indexed _transactionID, Transaction _transaction, Arbitration _arbitration);
-    event TransactionStateUpdate(uint indexed _transactionID, Transaction _transaction);
-    event TransactionResolved(uint indexed _transactionID, Transaction _transaction);
-
-    // Dispute level events
-    // Dispute from IEvidence
-    event DisputeStateUpdate(uint indexed _disputeID, Arbitration _arbitration);
-
-    // Fee Payment reminders
-    event HasToPayArbitrationFee(uint indexed transactionID, Party party);
-    event HasPaidArbitrationFee(uint indexed transactionID, Party party);
-
-    event HasToPayAppealFee(uint indexed transactionID, Party party);
-    event HasPaidAppealFee(uint indexed transactionID, Party party);
-
-    
-
-    constructor(address _arbitrator) { // Flesh out as and when.
+    constructor(address _arbitrator) {
         arbitrator = IArbitrator(_arbitrator);
         owner = msg.sender;
     }
@@ -125,14 +121,11 @@ contract Market is IArbitrable, IEvidence {
         _;
     }
 
-    /**
-     * @dev Let's a user list a gift card for sale.
-     
-     * @param _cardInfo The Unique Resource Locator (URI) for gift card information.
-     * @param _price The price set by the seller for the gift card.
-    **/
+    
+    //========== Contract functions ============
 
-    function listNewCard(string calldata _cardInfo, uint _price) external returns (uint transactionID) {
+    // Allows a seller to list a gift card.
+    function listNewCard(bytes32 calldata _cardInfo, uint _price) external returns (uint transactionID) {
 
         Transaction memory transaction = Transaction({
             price: _price,
@@ -162,13 +155,7 @@ contract Market is IArbitrable, IEvidence {
         emit TransactionCreated(transactionID, transaction, arbitration);
     }
 
-
-    /**
-     * @dev Let's a user buy i.e. engage in the sale of a gift card.
-    
-     * @param _transactionID The unique ID of the gift card being purchased.
-    **/
-
+    // Allows a buyer to engage in the sale of a gift card.
     function buyCard(
         uint _transactionID,
         Transaction memory _transaction,
@@ -191,18 +178,25 @@ contract Market is IArbitrable, IEvidence {
         emit MetaEvidence(_transactionID, _metaevidence);
     }
 
-    /**
-     * @dev Let's the seller withdraw the price amount (if the relevant conditions are met).
-     * @param _transactionID The unique ID of the gift card in concern.
-    **/
+    // Allows buyer to get the (hash of) URI containing gift card information.
+    function getCardInfo(
+        uint _transactionID,
+        Transaction memory _transaction
+    ) external OnlyValidTransaction(_transactionID, _transaction)  returns (bytes32 _cardInfo) {
 
-    function withdrawBySeller(
+        require(_transaction.buyer == msg.sender, "Only the buyer can retrieve item info.");
+        _cardInfo = _transaction.cardInfo_URI_hash;
+    }
+
+
+    // Allows seller to withdraw price from escrow (Case: no disputes raised.)
+    function withdrawPriceBySeller(
         uint _transactionID,
         Transaction memory _transaction
         ) external OnlyValidTransaction(_transactionID, _transaction) {
 
         // Write a succint filter statement later.
-        require(msg.sender == _transaction.seller, "Only the seller can withdraw the price of the card.");
+        require(msg.sender == _transaction.seller, "Only the seller can call a seller-withdraw function.");
         require(block.timestamp - _transaction.init > reclaimPeriod, "Cannot withdraw price while reclaim period is not over.");
         require(transaction.status == Status.Pending, "Can only withdraw price if the transaction is in the pending state.");
 
@@ -217,18 +211,50 @@ contract Market is IArbitrable, IEvidence {
         emit TransactionResolved(_transactionID, _transaction);
     }
 
-    function withdrawByBuyer() external {};
-
-    /**
-     * @dev Let's the buyer reclaim the price amount (if in the reclaim window) by depositing arbitration fee.
-    
-     * @param _transactionID The unique ID of the gift card in concern.
-    **/
-
-
-    function reclaimPriceByBuyer(
+    // Allows buyer to withdraw price + fees from escrow (Case: dispute raised; appeal possibly raised)
+    function withdrawPrice ByBuyer(
         uint _transactionID,
         Transaction memory _transaction
+        ) external OnlyValidTransaction(_transactionID, _transaction) {
+        
+        Arbitration storage arbitration = disputeID_to_arbitration[_transaction.disputeID];
+
+        require(msg.sender == _transaction.buyer, "Only the buyer can call a buyer-withdraw function.");
+        require(
+            arbitration.status == DisputeStatus.WaitingSeller,
+            "This function is called only when the seller's payment of the arbitration fee times out."
+        );
+        require(block.timestamp > arbitration.feeDepositDeadline, "The seller still has time to deposit an arbitration fee.");
+
+        if(arbitration.appealRound != 0) {
+            (uint256 appealPeriodStart, uint256 appealPeriodEnd) = arbitrator.appealPeriod(_transaction.disputeID);
+            require(
+                block.timestamp >= appealPeriodStart && block.timestamp > appealPeriodEnd, 
+                "Seller still has time to fund an appeal."
+            );
+        }
+
+        
+        arbitration.status = DisputeStatus.Resolved;
+
+        uint refundAmount = _transaction.locked_price_amount;
+        _transaction.locked_price_amount = 0;
+        tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
+
+        refundAmount += (arbitration.buyerArbitrationFee + arbitration.buyerAppealFee);
+        msg.sender.call{value: refundAmount};
+
+        emit TransactionStateUpdate(_transactionID, _transaction);
+        emit TransactionResolved(_transactionID, _transaction);
+    }       
+  
+
+    // Allows buyer to raise a dispute - must be raised within the recalim window - buyer must deposit arbitration fee.
+    function reclaimDisputeByBuyer(
+        uint _transactionID,
+        uint _metaevidenceID,
+        Transaction memory _transaction,
+        Arbitration memory _arbitration
         ) external OnlyValidTransaction(_transactionID _transaction) {
 
         require(msg.sender == _transaction.buyer, "Only the buyer of the card can reclaim the price paid.");
@@ -236,17 +262,21 @@ contract Market is IArbitrable, IEvidence {
         require(_transaction.status == Status.Pending, "Can reclaim price only in pending state.");
 
         uint arbitrationCost = arbitrator.arbitrationCost(""); // What is passed in for extraData?
-        require(msg.value == arbitrationCost, "Must deposit the right arbitration fee to reclaim paid price.");
+        require(msg.value >= arbitrationCost, "Must deposit the right arbitration fee to reclaim paid price.");
 
+        _arbitration.feeDepositDeadline = block.timestamp + arbitrationFeeDepositPeriod;
+        _arbitration.arbitrationFee += msg.value;
+        _arbitration.buyerArbitrationFee += msg.value;
+        _arbitration.status = DisputeStatus.WaitingSeller;
 
-        _transaction.status = TransactionStatus.Reclaimed;
+        _transaction.status = Status.Disputed;
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
 
+        emit DisputeStateUpdate(_transaction.disputeID, _arbitration);
         emit HasToPayArbitrationFee(_transactionID, Party.Seller);
     }
 
-    // Seller engage with dispute fn.
-
+    // Allows seller to engage with the buyer-raised dispute - must be raised before the fee deposit deadline - must pay arbitration fee.
     function payArbitrationFeeBySeller(
         uint _transactionID,
         uint _metaevidenceID,
@@ -259,21 +289,23 @@ contract Market is IArbitrable, IEvidence {
             msg.value >= (arbitrationCost - _arbitration.sellerArbitrationFee), 
             "Must have at least arbitration cost in balance to create dispute."
         );
-
-        if(_transaction.status < Status.Disputed) _arbitration.init = block.timestamp;
+        require(block.timestamp < _arbitration.feeDepositDeadline, "The arbitration fee deposit period is over.");
+        require(_arbitration.status == Dispute.WaitingSeller);
         
         _arbitration.arbitrationFee += msg.value;
         _arbitration.sellerArbitrationFee += msg.value;
+        _arbitration.feeDepositDeadline = block.timestamp + arbitrationFeeDepositPeriod;
 
         if(_arbitration.buyerArbitrationFee < arbitrationCost) {
             _arbitration.status = DisputeStatus.WaitingBuyer;
+            emit DisputeStateUpdate(_transaction.disputeID, _arbitration);
             emit HasToPayArbitrationFee(_transactionID, Party.Buyer);
         } else {
             raiseDispute(_transactionID, _metaevidenceID, arbitrationCost, _transaction, _arbitration);
         }
     }
 
-
+    // Allows buyer to pay remaining arbitration fees. (Case: arbitration cost was higher when seller deposited fee)
     function payArbitrationFeeByBuyer(
         uint _transactionID,
         uint _metaevidenceID,
@@ -286,22 +318,23 @@ contract Market is IArbitrable, IEvidence {
             msg.value >= (arbitrationCost - _arbitration.sellerArbitrationFee), 
             "Must have at least arbitration cost in balance to create dispute."
         );
-
-        if(_transaction.status < Status.Disputed) _arbitration.init = block.timestamp;
+        require(block.timestamp < _arbitration.feeDepositDeadline, "The arbitration fee deposit period is over.");
+        require(_arbitration.status == Dispute.WaitingBuyer);
         
         _arbitration.arbitrationFee += msg.value;
         _arbitration.buyerArbitrationFee += msg.value;
 
         if(_arbitration.sellerArbitrationFee < arbitrationCost) {
             _arbitration.status = DisputeStatus.WaitingSeller;
+            emit DisputeStateUpdate(_transaction.disputeID, _arbitration);
             emit HasToPayArbitrationFee(_transactionID, Party.Seller);
         } else {
             raiseDispute(_transactionID, _metaevidenceID, arbitrationCost, _transaction, _arbitration);
         }
     }
 
-    // raiseDispute internal function
 
+    // Calls the arbitrator contract to create a dispute - internally called - no checks
     function raiseDispute(
         uint _transactionID,
         uint _metaEvidenceID
@@ -335,18 +368,13 @@ contract Market is IArbitrable, IEvidence {
         emit Dispute(arbitrator, _transaction.disputeID, _metaEvidenceID, _transactionID);
     }
 
-    /**
-     * @dev Let's the buyer (post reclaim period) / seller appeal a ruling by depositing appeal fee.
-    
-     * @param _cardID The unique ID of the gift card in concern.
-    **/
-
+    // Allows buyer to pay appeal fee - must be paid in the appeal window set by arbitrator.
     function payAppealFeeBySeller(
         uint _transactionID,
         Transaction memory _transaction,
         Arbitration memory _arbitration,
     ) public payable {
-        // appeal period start / end checked by calling the arbitrator
+
         require(_transaction.status >= TransactionStatus.Disputed, "There is no dispute to appeal.");
 
         (uint256 appealPeriodStart, uint256 appealPeriodEnd) = arbitrator.appealPeriod(transaction.disputeID);
@@ -370,12 +398,13 @@ contract Market is IArbitrable, IEvidence {
         }
     }
 
-    function payAppealFeeByBuyer(
+    // Allows buyer to pay appeal fee - must be paid in the appeal window set by arbitrator.
+    function payAppealFeeByBuyer(   
         uint _transactionID,
         Transaction memory _transaction,
         Arbitration memory _arbitration,
     ) public payable {
-        // appeal period start / end checked by calling the arbitrator
+
         require(_transaction.status >= TransactionStatus.Disputed, "There is no dispute to appeal.");
 
         (uint256 appealPeriodStart, uint256 appealPeriodEnd) = arbitrator.appealPeriod(transaction.disputeID);
@@ -399,32 +428,33 @@ contract Market is IArbitrable, IEvidence {
         }
     }
 
+    // Calls the arbitrator contract to create an appeal - internally called - no checks
     function appealTransaction(
         uint _transactionID,
         uint _appealCost,
-        Transaction memory _transaction,
-        Arbitration memory _arbitration
+        Transaction memory _transaction
         ) internal {
 
         _transaction.status = Status.Appealed;
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
         
+        Arbitration storage arbitration = disputeID_to_arbitration[_disputeID];
 
-        _arbitration.appealRound++;
+        arbitration.appealRound++;
         arbitrator.appeal{value: _appealCost}(_transaction.disputeID, "");
-        _arbitration.status = DisputeStatus.Processing;
+        arbitration.status = DisputeStatus.Processing;
 
         // Seller | Buyer fee reimbursements.
 
-        if(_arbitration.sellerAppealFee > _appealCost) {
+        if(arbitration.sellerAppealFee > _appealCost) {
             uint extraFee = _arbitration.sellerAppealFee - _appealCost;
-            _arbitration.sellerAppealFee = _appealCost;
+            arbitration.sellerAppealFee = _appealCost;
             _transaction.seller.call{value: extraFee};
         }
 
-        if(_arbitration.buyerAppealFee > _appealCost) {
+        if(arbitration.buyerAppealFee > _appealCost) {
             uint extraFee = _arbitration.buyerAppealFee - _appealCost;
-            _arbitration.buyerAppealFee = _appealCost;
+            arbitration.buyerAppealFee = _appealCost;
             _transaction.buyer.call{value: extraFee};
         }
 
@@ -432,10 +462,7 @@ contract Market is IArbitrable, IEvidence {
         emit DisputeStateUpdate( _transaction.disputeID, Arbitration _arbitration);
     }
 
-    // Implementation of the rule() function from IArbitrable.
-    // Ruling event is directly inherited from IArbitrable.
-
-
+    // Called by the arbitrator contract to give a ruling on a dispute - see IArbitrable i.e. ERC 792 Arbitrable interface.
     function rule(uint256 _disputeID, uint256 _ruling) external override {
 
         require(msg.sender == address(arbitrator), "Only the arbitrator can give a ruling.");
@@ -457,9 +484,11 @@ contract Market is IArbitrable, IEvidence {
             arbitration.ruling = Party.None;
         }
 
+        
         emit Ruling(arbitrator, _disputeID, _ruling);
     }
 
+    // Executes the ruling given by the arbitrator
     function executeRuling(
         uint _transactionID,
         Transaction memory _transaction
@@ -468,65 +497,80 @@ contract Market is IArbitrable, IEvidence {
         Arbitration storage _arbitration = disputeID_to_arbitration[_transactionID]; // storage init whenever arbitration state change?
         require(arbitration.status == DisputeStatus.Resolved, "An arbitration must be resolved to execute its ruling.");
 
+        uint refundAmount = _transaction.locked_price_amout;
+
         if(_arbitration.ruling == Party.Buyer) {
-            //
+            refundAmount += _arbitration.buyerArbitrationFee;
+            refundAmount += _arbitration.buyerAppealFee;
+
+            _transaction.buyer.call{value:  refundAmount};
         }
 
         if(_arbitration.ruling == Party.Seller) {
-            //
+            refundAmount += _arbitration.sellerBuyerArbitrationFee;
+            refundAmount += _arbitration.sellerAppealFee;
+
+            _transaction.seller.call{value:  refundAmount};
         }
 
         if(_arbitration.ruling == Party.None) {
-            //
+            refundAmount += _arbitration.sellerBuyerArbitrationFee
+            refundAmount += _arbitration.sellerAppealFee;
+
+            _transaction.seller.call{value:  (refundAmount)/2};
+            _transaction.buyer.call{value:  (refundAmount)/2};
         }
+        
+        _transaction.locked_price_amount = 0;
+        _transaction.Status = Status.Resolved;
+        tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
+
+        emit TransactionStateUpdate(_transactionID, _transaction);
+        emit TransactionResolved(_transactionID, _transaction);
 
     };
 
-    function submiteEvidence(bytes32 _cardID, string calldata _evidence) public OnlyValidTransaction(_cardID) {
-
-        Transaction memory transaction = transactions[cardID_to_txID[_cardID]];
-        Card memory card = cards[_cardID];
+    // Allows either party of a transaction to submit evidence whether or not a dispute has been raised.
+    function submiteEvidence(
+        uint _transactionID,
+        Transaction memory _transaction,
+        string calldata _evidence
+    ) public OnlyValidTransaction(_transactionID _transaction) {
 
         require(
-            msg.sender == card.seller || msg.sender == card.buyer,
+            msg.sender == _transaction.seller || msg.sender == _transaction.buyer,
             "The caller must be the seller or the buyer."
         );
         require(
-            transaction.status == TransactionStatus.Disputed || transaction.status == TransactionStatus.Appealed,
+            _transaction.status < Status.Resolved,
             "Must not send evidence if the dispute is resolved."
         );
 
-        emit Evidence(arbitrator, cardID_to_txID[_cardID], msg.sender, _evidence);
+        emit Evidence(arbitrator, _transactionID, msg.sender, _evidence);
     }
 
     // Setter functions for contract state variables.
  
-    function setReclaimationPeriod(uint _newPeriod) external {
+    function setReclaimationPeriod(uint _newReclaimPeriod) external {
         require(msg.sender == owner, "Only the owner of the contract can change reclaim period.");
-        reclaimPeriod = _newPeriod;
+        reclaimPeriod = _newReclaimPeriod;
     }
 
-    function setArbitrationFeeDepositPeriod(uint _newPeriod) external {
+    function setArbitrationFeeDepositPeriod(uint _newFeeDepositPeriod) external {
         require(msg.sender == owner, "Only the owner of the contract can change arbitration fee deposit period.");
-        arbitrationFeeDepositPeriod = _newPeriod;
+        arbitrationFeeDepositPeriod = _newFeeDepositPeriod;
     }
 
-    function setNumOfRulingOptions(uint _newNumOfOptions) external {
-        require(msg.sender == owner, "Only the owner of the contract can change the number of ruling options.");
-        numOfRulingOptions = _newNumOfOptions;
+    function setCardPrice(uint _transactionID, Transaction memory _transaction) external {
+        require(msg.sender == _transaction.seller, "Only the owner of a card can set its price.");
+        _transaction.price = _newPrice;
+
+        tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
+
+        emit TransactionStateUpdate(_transactionID, _transaction);
     }
 
-    function setCardPrice(bytes32 _cardID, uint _newPrice) external {
-        require(msg.sender == cards[_cardID].seller, "Only the owner of a card can set its price.");
-        cards[_cardID].price = _newPrice;
-    }
-
-    function setSaleSatus(bytes32 _cardID, bool _status) external {
-        require(msg.sender == cards[_cardID].seller, "Only the owner of a card can set its price.");
-        cards[_cardID].forSale = _status;
-    }
-
-    // Utility functionss
+    // Utility functions
 
     function hashTransactionState(Transaction memory transaction) public pure returns (bytes32) {
         
