@@ -16,7 +16,6 @@ TO DO:
 - Hardhat tests
 - General cleanup of contract.
 
-NOTE - As of now, the contract does not contain logic that sends 
 */
 
 
