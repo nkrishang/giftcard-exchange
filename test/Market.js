@@ -34,5 +34,9 @@ describe("Market contract",  function() {
         it("Should set the right owner", async function () {
             expect(await market.owner()).to.equal(owner.address);
         });
+
+        it("Should set SimpleCentralizedArbitrator as the arbitrator", async function () {
+            expect(await market.arbitrator()).to.equal(arbitratorAddress);
+        })
     })
 })
