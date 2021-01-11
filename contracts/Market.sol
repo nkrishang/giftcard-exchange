@@ -100,7 +100,7 @@ contract Market is IArbitrable, IEvidence {
         Party ruling;
     }
 
-    bytes32[] tx_hashes;
+    bytes32[] public tx_hashes;
 
     mapping(uint => Arbitration) public disputeID_to_arbitration;
 
@@ -124,7 +124,7 @@ contract Market is IArbitrable, IEvidence {
     //========== Contract functions ============
 
     // Allows a seller to list a gift card.
-    function listNewCard(bytes32 _cardInfo, uint _price) external returns (uint transactionID) {
+    function listNewCard(bytes32 _cardInfo, uint _price) external {
 
         Transaction memory transaction = Transaction({
             price: _price,
@@ -144,7 +144,7 @@ contract Market is IArbitrable, IEvidence {
 
         bytes32 tx_hash = hashTransactionState(transaction);
         tx_hashes.push(tx_hash);
-        transactionID = tx_hashes.length;
+        uint transactionID = tx_hashes.length;
 
         Arbitration memory arbitration = Arbitration({
             transactionID: transactionID,
@@ -580,6 +580,12 @@ contract Market is IArbitrable, IEvidence {
 
         emit TransactionStateUpdate(_transactionID, _transaction);
     }
+
+    // Getter functions for contract state variables.
+
+    function getNumOfTransactions() external view returns (uint) {
+        return tx_hashes.length;
+    } 
 
     // Utility functions
 
