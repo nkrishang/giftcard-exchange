@@ -2,16 +2,11 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 
-// The tests in "Listing a gift card" are an example of how to test events with ethers js.
 // For more on how to test events with ethers, see - https://github.com/ethers-io/ethers.js/issues/283
 
 describe("Market contract - Listing flow",  function() {
 
-    let ArbitratorFactory;
     let arbitrator;
-    let arbitratorAddress;
-
-    let MarketFactory;
     let market;
 
     let owner;
@@ -23,14 +18,15 @@ describe("Market contract - Listing flow",  function() {
 
     beforeEach(async function() {
 
-        ArbitratorFactory = await ethers.getContractFactory("SimpleCentralizedArbitrator");
+        // Deploying the arbitrator contract.
+        const ArbitratorFactory = await ethers.getContractFactory("SimpleCentralizedArbitrator");
         arbitrator = await ArbitratorFactory.deploy();
-        arbitratorAddress = arbitrator.address;
 
-        MarketFactory = await ethers.getContractFactory("Market");
+        // Deploying the market contract && getting signers.
+        const MarketFactory = await ethers.getContractFactory("Market");
         [owner, seller, buyer] = await ethers.getSigners();
 
-        market = await MarketFactory.deploy(arbitratorAddress);
+        market = await MarketFactory.deploy(arbitrator.address);
 
         cardInfo_hash = ethers.utils.keccak256(ethers.utils.formatBytes32String("giftcard information"));
         metaevidence = "ERC 1497 compliant metavidence";
@@ -43,7 +39,7 @@ describe("Market contract - Listing flow",  function() {
         });
 
         it("Should set SimpleCentralizedArbitrator as the arbitrator", async function () {
-            expect(await market.arbitrator()).to.equal(arbitratorAddress);
+            expect(await market.arbitrator()).to.equal(arbitrator.address);
         })
     })
 

@@ -2,38 +2,59 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 
-// The tests in "Listing a gift card" are an example of how to test events with ethers js.
 // For more on how to test events with ethers, see - https://github.com/ethers-io/ethers.js/issues/283
 
 describe("Market contract - Buying flow",  function() {
 
-    let ArbitratorFactory;
     let arbitrator;
-    let arbitratorAddress;
-
-    let MarketFactory;
     let market;
 
     let owner;
     let seller;
     let buyer;
 
+    let price;
     let cardInfo_hash;
     let metaevidence;
 
+    let transactionID;
+    let transactionObj;
+    let listEvent;
+
     beforeEach(async function() {
 
-        ArbitratorFactory = await ethers.getContractFactory("SimpleCentralizedArbitrator");
+        // Deploying the arbitrator contract.
+        const ArbitratorFactory = await ethers.getContractFactory("SimpleCentralizedArbitrator");
         arbitrator = await ArbitratorFactory.deploy();
-        arbitratorAddress = arbitrator.address;
 
-        MarketFactory = await ethers.getContractFactory("Market");
+        // Deploying the market contract && getting signers.
+        const MarketFactory = await ethers.getContractFactory("Market");
         [owner, seller, buyer] = await ethers.getSigners();
 
-        market = await MarketFactory.deploy(arbitratorAddress);
+        market = await MarketFactory.deploy(arbitrator.address);
 
+
+        // Shared logic by tests - setup for listing the gift card to be bought by the buyer.
+        price = ethers.utils.parseEther("1");
         cardInfo_hash = ethers.utils.keccak256(ethers.utils.formatBytes32String("giftcard information"));
         metaevidence = "ERC 1497 compliant metavidence";
+
+        listEvent = new Promise((resolve, reject) => {
+
+            market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
+                
+                event.removeListener();
+
+                transactionID = _transactionID;
+                transactionObj = _transactionObj;
+
+                resolve();
+            })
+
+            setTimeout(() => {
+                reject(new Error("TransactionCreated event timeout."));
+            }, 60000);
+        })
     });
 
     describe("Deployment", function() {
@@ -43,7 +64,7 @@ describe("Market contract - Buying flow",  function() {
         });
 
         it("Should set SimpleCentralizedArbitrator as the arbitrator", async function () {
-            expect(await market.arbitrator()).to.equal(arbitratorAddress);
+            expect(await market.arbitrator()).to.equal(arbitrator.address);
         })
     })
 
@@ -52,29 +73,6 @@ describe("Market contract - Buying flow",  function() {
 
         it("Should emit Transaction state update event when seller buys a card", async function() {
 
-            // List card first ---> Get transaction ID and Transaction struct object.
-            let price = ethers.utils.parseEther("1");
-
-            let transactionID;
-            let transactionObj; // init as an array. If that doesn't work, init as an object
-
-            let listEvent = new Promise((resolve, reject) => {
-
-                market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
-
-                    event.removeListener();
-
-                    transactionID = _transactionID;
-                    transactionObj = _transactionObj;
-
-                    resolve();
-                })
-
-                setTimeout(() => {
-                    reject(new Error("TransactionCreated event timeout."));
-                }, 20000);
-            })
-
             await market.connect(seller).listNewCard(cardInfo_hash, price);
             await listEvent;
 
@@ -82,28 +80,6 @@ describe("Market contract - Buying flow",  function() {
         })
 
         it("Should emit MetaEvidence event when seller buys a card", async function() {
-            // List card first ---> Get transaction ID and Transaction struct object.
-            let price = ethers.utils.parseEther("1");
-
-            let transactionID;
-            let transactionObj; // init as an array. If that doesn't work, init as an object
-
-            let listEvent = new Promise((resolve, reject) => {
-
-                market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
-                    
-                    event.removeListener();
-
-                    transactionID = _transactionID;
-                    transactionObj = _transactionObj;
-
-                    resolve();
-                })
-
-                setTimeout(() => {
-                    reject(new Error("TransactionCreated event timeout."));
-                }, 20000);
-            })
 
             await market.connect(seller).listNewCard(cardInfo_hash, price);
             await listEvent;
@@ -112,28 +88,6 @@ describe("Market contract - Buying flow",  function() {
         })
         
         it("Should emit a Transaction event with the updated transaction state", async function() {
-            // List card first ---> Get transaction ID and Transaction struct object.
-            let price = ethers.utils.parseEther("1");
-
-            let transactionID;
-            let transactionObj; // init as an array. If that doesn't work, init as an object
-
-            let listEvent = new Promise((resolve, reject) => {
-
-                market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
-                    
-                    event.removeListener();
-
-                    transactionID = _transactionID;
-                    transactionObj = _transactionObj;
-
-                    resolve();
-                })
-
-                setTimeout(() => {
-                    reject(new Error("TransactionCreated event timeout."));
-                }, 20000);
-            })
 
             await market.connect(seller).listNewCard(cardInfo_hash, price);
             await listEvent;
@@ -176,28 +130,6 @@ describe("Market contract - Buying flow",  function() {
         })
 
         it("Should emit a Metaevidence event with the metaevidence", async function() {
-            // List card first ---> Get transaction ID and Transaction struct object.
-            let price = ethers.utils.parseEther("1");
-
-            let transactionID;
-            let transactionObj; // init as an array. If that doesn't work, init as an object
-
-            let listEvent = new Promise((resolve, reject) => {
-
-                market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
-                    
-                    event.removeListener();
-
-                    transactionID = _transactionID;
-                    transactionObj = _transactionObj;
-
-                    resolve();
-                })
-
-                setTimeout(() => {
-                    reject(new Error("TransactionCreated event timeout."));
-                }, 20000);
-            })
 
             await market.connect(seller).listNewCard(cardInfo_hash, price);
             await listEvent;
@@ -224,28 +156,6 @@ describe("Market contract - Buying flow",  function() {
         })
 
         it("Should not let the buyer buy a card for less than the price (revert case)", async function() {
-            // List card first ---> Get transaction ID and Transaction struct object.
-            const price = ethers.utils.parseEther("1");
-
-            let transactionID;
-            let transactionObj; // init as an array. If that doesn't work, init as an object
-
-            let listEvent = new Promise((resolve, reject) => {
-
-                market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
-                    
-                    event.removeListener();
-
-                    transactionID = _transactionID;
-                    transactionObj = _transactionObj;
-
-                    resolve();
-                })
-
-                setTimeout(() => {
-                    reject(new Error("TransactionCreated event timeout."));
-                }, 20000);
-            })
 
             await market.connect(seller).listNewCard(cardInfo_hash, price);
             await listEvent;
