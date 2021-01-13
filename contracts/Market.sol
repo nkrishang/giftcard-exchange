@@ -38,7 +38,7 @@ contract Market is IArbitrable, IEvidence {
     IArbitrator public arbitrator; // Initialize arbitrator in the constructor. Make immutable on deployment(?)
 
     uint arbitrationFeeDepositPeriod = 1 days;
-    uint reclaimPeriod = 6 hours;
+    uint reclaimPeriod = 1 minutes; // This is a test value. Actual: 6 hours.
     uint numOfRulingOptions = 2;
 
 
@@ -56,7 +56,7 @@ contract Market is IArbitrable, IEvidence {
     event TransactionResolved(uint indexed _transactionID, Transaction _transaction);
 
     // Dispute level events (not defined in inherited interfaces)
-    event DisputeStateUpdate(uint indexed _disputeID, Arbitration _arbitration);
+    event DisputeStateUpdate(uint indexed _disputeID, uint _transactionID, Arbitration _arbitration);
 
     // Fee Payment notifications
     event HasToPayArbitrationFee(uint indexed transactionID, Party party);
@@ -268,9 +268,9 @@ contract Market is IArbitrable, IEvidence {
         Arbitration memory _arbitration
         ) external payable OnlyValidTransaction(_transactionID, _transaction) {
 
-        require(msg.sender == _transaction.buyer, "Only the buyer of the card can reclaim the price paid.");
+        require(msg.sender == _transaction.buyer, "Only the buyer of the card can raise a reclaim dispute.");
         require(block.timestamp - _transaction.init < reclaimPeriod, "Cannot reclaim price after the reclaim window is closed.");
-        require(_transaction.status == Status.Pending, "Can reclaim price only in pending state.");
+        require(_transaction.status == Status.Pending, "Can raise a reclaim dispute pending state.");
 
         uint arbitrationCost = arbitrator.arbitrationCost(""); // What is passed in for extraData?
         require(msg.value >= arbitrationCost, "Must deposit the right arbitration fee to reclaim paid price.");
@@ -283,7 +283,8 @@ contract Market is IArbitrable, IEvidence {
         _transaction.status = Status.Disputed;
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
 
-        emit DisputeStateUpdate(_transaction.disputeID, _arbitration);
+        emit TransactionStateUpdate(_transactionID, _transaction);
+        emit DisputeStateUpdate(_transaction.disputeID, _transactionID, _arbitration);
         emit HasToPayArbitrationFee(_transactionID, Party.Seller);
     }
 
@@ -309,7 +310,7 @@ contract Market is IArbitrable, IEvidence {
 
         if(_arbitration.buyerArbitrationFee < arbitrationCost) {
             _arbitration.status = DisputeStatus.WaitingBuyer;
-            emit DisputeStateUpdate(_transaction.disputeID, _arbitration);
+            emit DisputeStateUpdate(_transaction.disputeID, _transactionID, _arbitration);
             emit HasToPayArbitrationFee(_transactionID, Party.Buyer);
         } else {
             raiseDispute(_transactionID, _metaevidenceID, arbitrationCost, _transaction, _arbitration);
@@ -337,7 +338,7 @@ contract Market is IArbitrable, IEvidence {
 
         if(_arbitration.sellerArbitrationFee < arbitrationCost) {
             _arbitration.status = DisputeStatus.WaitingSeller;
-            emit DisputeStateUpdate(_transaction.disputeID, _arbitration);
+            emit DisputeStateUpdate(_transaction.disputeID, _transactionID, _arbitration);
             emit HasToPayArbitrationFee(_transactionID, Party.Seller);
         } else {
             raiseDispute(_transactionID, _metaevidenceID, arbitrationCost, _transaction, _arbitration);
@@ -470,7 +471,7 @@ contract Market is IArbitrable, IEvidence {
         }
 
         emit TransactionStateUpdate(_transactionID, _transaction);
-        emit DisputeStateUpdate( _transaction.disputeID, arbitration);
+        emit DisputeStateUpdate( _transaction.disputeID, _transactionID, arbitration);
     }
 
     // Called by the arbitrator contract to give a ruling on a dispute - see IArbitrable i.e. ERC 792 Arbitrable interface.
@@ -574,6 +575,7 @@ contract Market is IArbitrable, IEvidence {
 
     function setCardPrice(uint _transactionID, Transaction memory _transaction, uint _newPrice) external {
         require(msg.sender == _transaction.seller, "Only the owner of a card can set its price.");
+        require(_transaction.status == Status.None, "Can't change gift card price once it has been engaged in sale.");
         _transaction.price = _newPrice;
 
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);

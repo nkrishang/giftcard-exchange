@@ -32,17 +32,6 @@ describe("Market contract - Listing flow",  function() {
         metaevidence = "ERC 1497 compliant metavidence";
     });
 
-    describe("Deployment", function() {
-
-        it("Should set the right owner", async function () {
-            expect(await market.owner()).to.equal(owner.address);
-        });
-
-        it("Should set SimpleCentralizedArbitrator as the arbitrator", async function () {
-            expect(await market.arbitrator()).to.equal(arbitrator.address);
-        })
-    })
-
     describe("Listing a giftcard", function() {
 
         it("Should emit a Transaction event when a giftcard is listed", async function() {

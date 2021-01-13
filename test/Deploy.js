@@ -7,9 +7,7 @@ const { ethers } = require("hardhat");
 
 describe("Market contract - Deployment",  function() {
 
-    let ArbitratorFactory;
     let arbitrator;
-    let arbitratorAddress;
 
     let MarketFactory;
     let market;
@@ -23,14 +21,13 @@ describe("Market contract - Deployment",  function() {
 
     beforeEach(async function() {
 
-        ArbitratorFactory = await ethers.getContractFactory("SimpleCentralizedArbitrator");
+        const ArbitratorFactory = await ethers.getContractFactory("SimpleCentralizedArbitrator");
         arbitrator = await ArbitratorFactory.deploy();
-        arbitratorAddress = arbitrator.address;
 
         MarketFactory = await ethers.getContractFactory("Market");
         [owner, seller, buyer] = await ethers.getSigners();
 
-        market = await MarketFactory.deploy(arbitratorAddress);
+        market = await MarketFactory.deploy(arbitrator.address);
 
         cardInfo_hash = ethers.utils.keccak256(ethers.utils.formatBytes32String("giftcard information"));
         metaevidence = "ERC 1497 compliant metavidence";
@@ -43,25 +40,9 @@ describe("Market contract - Deployment",  function() {
         });
 
         it("Should set SimpleCentralizedArbitrator as the arbitrator", async function () {
-            expect(await market.arbitrator()).to.equal(arbitratorAddress);
+            expect(await market.arbitrator()).to.equal(arbitrator.address);
         })
     });
-
-    // describe("Shared user flow", function() {
-
-
-    //     it("Should not let the seller withdraw price before the reclaim period is over", async function() {
-    //         //
-    //     })
-
-    //     it("Should let the buyer get the gift card URI", async function() {
-    //         //
-    //     })
-
-    //     it("Should allow the seller to change giftcard price", async function() {
-
-    //     })
-    // });
 
     // describe("Dispute Cases", function() {
 
