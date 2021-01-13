@@ -37,7 +37,7 @@ contract Market is IArbitrable, IEvidence {
     address public owner; // temp variable for testing (?)
     IArbitrator public arbitrator; // Initialize arbitrator in the constructor. Make immutable on deployment(?)
 
-    uint arbitrationFeeDepositPeriod = 1 days;
+    uint arbitrationFeeDepositPeriod = 1 minutes; // This is a test value. Actual: 1 days.
     uint reclaimPeriod = 1 minutes; // This is a test value. Actual: 6 hours.
     uint numOfRulingOptions = 2;
 
@@ -301,8 +301,11 @@ contract Market is IArbitrable, IEvidence {
             msg.value >= (arbitrationCost - _arbitration.sellerArbitrationFee), 
             "Must have at least arbitration cost in balance to create dispute."
         );
+        require(msg.sender == _transaction.seller, "Only the seller involved in the dispute can pay the seller's fee.");
         require(block.timestamp < _arbitration.feeDepositDeadline, "The arbitration fee deposit period is over.");
-        require(_arbitration.status == DisputeStatus.WaitingSeller);
+        require(_arbitration.status == DisputeStatus.WaitingSeller,
+            "Can only pay deposit fee when its the seller's turn to respond."
+        );
         
         _arbitration.arbitrationFee += msg.value;
         _arbitration.sellerArbitrationFee += msg.value;

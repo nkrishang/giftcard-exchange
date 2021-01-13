@@ -18,6 +18,8 @@ import "./IArbitrator.sol";
 contract SimpleCentralizedArbitrator is IArbitrator {
     address public owner = msg.sender;
 
+    bool public called; // test variable
+
     struct Dispute {
         IArbitrable arbitrated;
         uint256 choices;
@@ -27,9 +29,15 @@ contract SimpleCentralizedArbitrator is IArbitrator {
 
     Dispute[] public disputes;
 
-    function arbitrationCost(bytes memory _extraData) public override pure returns (uint256) {
+    function arbitrationCost(bytes memory _extraData) public override view returns (uint256) {
         _extraData = ""; // dummy statement
-        return 1 ether;
+        if(!(called)) return 1 ether;
+        if(called) return 2 ether;
+    }
+
+    function changeCalled() external { // test function
+        require(msg.sender == owner, "Only owner");
+        called = true;
     }
 
     function appealCost(uint256 _disputeID, bytes memory _extraData) public override pure returns (uint256) {
