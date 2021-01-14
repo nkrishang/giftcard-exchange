@@ -21,6 +21,7 @@ describe("Market contract - Buying flow",  function() {
     let transactionID;
     let transactionObj;
     let arbitration;
+    let disputeID;
 
     let listEvent;
     let buyEvent
@@ -116,5 +117,78 @@ describe("Market contract - Buying flow",  function() {
         );
         await reclaimTransactionEvent;
         await reclaimDisputeEvent;
+
+        let disputeEvent = new Promise((resolve, reject) => {
+
+            market.on("Dispute", (_arbitrator, _disputeID, _metaEvidenceID, _transactionID, event) => {
+
+                event.removeListener();
+                disputeID = _disputeID;
+                resolve();
+            })
+
+            setTimeout(() => {
+                reject(new Error("feeDeposit event timeout"));
+            }, 20000);
+        })
+
+        let transactionEvent = new Promise((resolve, reject) => {
+
+            market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
+                event.removeListener();
+                transactionObj = _transactionObj
+                resolve();
+            })
+
+            setTimeout(() => {
+                reject(new Error("feeDeposit event timeout"));
+            }, 20000);
+        })
+
+        await market.connect(seller).payArbitrationFeeBySeller(
+            transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
+        );
+        await transactionEvent;
+        await disputeEvent;
     });
+
+    describe("Arbitrator emits ruling", function() {
+
+        it("Should emit the ERC 792 Ruling event", async function() {
+
+            const ruling = 1; // Buyer wins
+
+            let rulingEvent = new Promise((resolve, reject) => {
+
+                market.on("Ruling", (_arbitrator, _disputeID, _ruling, event) => {
+                    event.removeListener();
+
+                    expect(_arbitrator).to.equal(arbitrator.address);
+                    expect(_disputeID).to.equal(disputeID);
+                    expect(_ruling).to.equal(ruling);
+
+                    resolve();
+                })
+
+                setTimeout(() => {
+                    reject(new Error("Ruling even timeout"));
+                }, 30000)
+            })
+            await arbitrator.connect(owner).rule(disputeID, ruling);
+            await rulingEvent;
+        })
+
+        it("Should reimburse the winner of the arbitration", async function() {
+            const buyerBelanceBefore = await buyer.getBalance()
+
+            const ruling = 1; // Buyer wins
+            await arbitrator.connect(owner).rule(disputeID, ruling);
+            arbitration = await market.disputeID_to_arbitration(disputeID);
+            
+            await market.connect(owner).executeRuling(transactionID, disputeID, transactionObj)
+            const buyerBalanceAfter = await buyer.getBalance();
+
+            expect(buyerBalanceAfter - buyerBelanceBefore).to.gte(2);
+        })
+    })
 })

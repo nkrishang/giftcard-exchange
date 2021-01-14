@@ -28,6 +28,8 @@ describe("Market contract - Buying flow",  function() {
 
     beforeEach(async function() {
 
+        this.timeout(60000);
+
         // Deploying the arbitrator contract.
         const ArbitratorFactory = await ethers.getContractFactory("SimpleCentralizedArbitrator");
         arbitrator = await ArbitratorFactory.deploy();
@@ -120,133 +122,47 @@ describe("Market contract - Buying flow",  function() {
         
         await arbitrator.changeCalled(); // changes arbitration cost
 
-        let disputeEvent = new Promise((resolve, reject) => {
+        let sellerFeeDepositEvent = new Promise((resolve, reject) => {
 
-            market.on("Dispute", (_arbitrator, _disputeID, _metaEvidenceID, _transactionID, event) => {
-
+            market.on("DisputeStateUpdate", (_disputeID, _transactionID, _arbitration, event) => {
                 event.removeListener();
-                disputeID = _disputeID;
+
+                arbitration = _arbitration;
+
                 resolve();
             })
 
             setTimeout(() => {
-                reject(new Error("feeDeposit event timeout"));
+                reject(new Error("seller fee deposit event timeout"));
             }, 20000);
         })
-
-        let transactionEvent = new Promise((resolve, reject) => {
-
-            market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
-                event.removeListener();
-                transactionObj = _transactionObj
-                resolve();
-            })
-
-            setTimeout(() => {
-                reject(new Error("feeDeposit event timeout"));
-            }, 20000);
-        })
-
-        await transactionEvent;
-        await disputeEvent;
-        arbitration = await market.disputeID_to_arbitration(disputeID);
 
         await market.connect(seller).payArbitrationFeeBySeller(
             transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("2")}
         );
+        await sellerFeeDepositEvent;
     });
 
 
-    describe("Dispute cases - seller wins", function() {
+    describe("Dispute cases - buyer responds to seller fee deposit", function() {
 
-        describe("Seller pays arbitration fee", function() {
-
-            // metaevidenceID is transactionID
+        describe("Buyer pays arbitration fee", function() {
 
             it("Should emit transaction state update event", async function() {
 
-                await expect(market.connect(seller).payArbitrationFeeBySeller(
+                await expect(market.connect(buyer).payArbitrationFeeByBuyer(
                     transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
-                )).to.emit(market, "TransactionStateUpdate");
+                )).to.emit(market, "TransactionStateUpdate")
             })
 
-            it("Should emit Dispute event", async function() {
-
-                await expect(market.connect(seller).payArbitrationFeeBySeller(
-                    transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
-                )).to.emit(market, "Dispute");
-            })
-
-            it("Should update transaction state", async function() {
-
-                let feeDepositEvent = new Promise((resolve, reject) => {
-
-                    market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
-
-                        event.removeListener();
-
-                        let structEqual = true;
-
-                        if(_transactionObj.length != transactionObj.length) {
-                            structEqual = false;
-                        } else {
-                            for(let i = 0; i < _transactionObj.length; i++) {
-                                if(transactionObj[i] != _transactionObj[i]) {
-                                    structEqual = false;
-                                    break;
-                                }
-                            };
-                        }
-
-                        expect(_transactionID).to.equal(transactionID);
-                        expect(structEqual).to.equal(false);
-        
-                        resolve();
-                    })
-
-                    setTimeout(() => {
-                        reject(new Error("feeDeposit event timeout"));
-                    }, 20000);
-                })
-
-                await market.connect(seller).payArbitrationFeeBySeller(
-                    transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
-                );
-                await feeDepositEvent;
-            })
-
-            it("Should update dispute state", async function() {
-
-                let disputeID;
+            it("Should emit dispute event", async function() {
                 
-                let feeDepositEvent = new Promise((resolve, reject) => {
-
-                    market.on("Dispute", (_arbitrator, _disputeID, _metaEvidenceID, _transactionID, event) => {
-
-                        event.removeListener();
-
-                        expect(_transactionID).to.equal(transactionID);
-                        expect(_arbitrator).to.equal(arbitrator.address);
-
-                        disputeID = _disputeID;
-        
-                        resolve();
-                    })
-
-                    setTimeout(() => {
-                        reject(new Error("feeDeposit event timeout"));
-                    }, 20000);
-                })
-
-                await market.connect(seller).payArbitrationFeeBySeller(
+                await expect(market.connect(buyer).payArbitrationFeeByBuyer(
                     transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
-                );
-
-                await feeDepositEvent;
-                const _arbitration = await market.disputeID_to_arbitration(disputeID);
-
-                expect(_arbitration[5]).to.equal(ethers.utils.parseEther("2"));
+                )).to.emit(market, "Dispute")
             })
+
+            // raiseDispute has already been tested in SellerFees
         })
 
         describe("Revert cases", async function() {
@@ -262,19 +178,19 @@ describe("Market contract - Buying flow",  function() {
                     }, 60000);
                 })
 
-                await expect(market.connect(seller).payArbitrationFeeBySeller(
+                await expect(market.connect(buyer).payArbitrationFeeByBuyer(
                     transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
                 )).to.be.revertedWith("The arbitration fee deposit period is over.");
             })
 
             it("Should only allow the seller to pay the seller fee", async function() {
 
-                await expect(market.connect(foreignParty).payArbitrationFeeBySeller(
+                await expect(market.connect(foreignParty).payArbitrationFeeByBuyer(
                     transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
-                )).to.be.revertedWith("Only the seller involved in the dispute can pay the seller's fee.");
+                )).to.be.revertedWith("Only the buyer involved in the dispute can pay the buyer's fee.");
             })
 
-            it("Should only allow seller to deposit fee when it's the seller's turn to do so.", async function() {
+            it("Should only allow buyer to deposit fee when it's the buyer's turn to do so.", async function() {
                 
                 let disputeID;
                 let disputeEvent = new Promise((resolve, reject) => {
@@ -304,7 +220,7 @@ describe("Market contract - Buying flow",  function() {
                     }, 20000);
                 })
 
-                await market.connect(seller).payArbitrationFeeBySeller(
+                await market.connect(buyer).payArbitrationFeeByBuyer(
                     transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
                 );
 
@@ -312,11 +228,11 @@ describe("Market contract - Buying flow",  function() {
                 await disputeEvent;
                 arbitration = await market.disputeID_to_arbitration(disputeID);
 
-                await expect(market.connect(seller).payArbitrationFeeBySeller(
+                await expect(market.connect(buyer).payArbitrationFeeByBuyer(
                     transactionID, transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
-                )).to.be.revertedWith("Can only pay deposit fee when its the seller's turn to respond.");
+                )).to.be.revertedWith("Can only pay deposit fee when its the buyer's turn to respond.");
 
             })
-        }) 
+        })
     })
 })

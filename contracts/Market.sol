@@ -48,7 +48,7 @@ contract Market is IArbitrable, IEvidence {
     enum Party {None, Buyer ,Seller}
     enum Status {None, Pending, Disputed, Appealed, Resolved}
     enum DisputeStatus {None, WaitingSeller, WaitingBuyer, Processing, Resolved}
-    enum RulingOptions {RefusedToArbitrate, SellerWins, BuyerWins}
+    enum RulingOptions {RefusedToArbitrate, BuyerWins, SellerWins}
 
     // Transaction level events 
     event TransactionCreated(uint indexed _transactionID, Transaction _transaction, Arbitration _arbitration);
@@ -56,7 +56,7 @@ contract Market is IArbitrable, IEvidence {
     event TransactionResolved(uint indexed _transactionID, Transaction _transaction);
 
     // Dispute level events (not defined in inherited interfaces)
-    event DisputeStateUpdate(uint indexed _disputeID, uint _transactionID, Arbitration _arbitration);
+    event DisputeStateUpdate(uint indexed _disputeID, uint indexed _transactionID, Arbitration _arbitration);
 
     // Fee Payment notifications
     event HasToPayArbitrationFee(uint indexed transactionID, Party party);
@@ -182,6 +182,7 @@ contract Market is IArbitrable, IEvidence {
         _transaction.status = Status.Pending;
         _transaction.forSale = false;
         _transaction.buyer = msg.sender;
+        _transaction.locked_price_amount = msg.value; // yoyo
         _transaction.init = block.timestamp;
 
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
@@ -334,10 +335,14 @@ contract Market is IArbitrable, IEvidence {
             "Must have at least arbitration cost in balance to create dispute."
         );
         require(block.timestamp < _arbitration.feeDepositDeadline, "The arbitration fee deposit period is over.");
-        require(_arbitration.status == DisputeStatus.WaitingBuyer);
+        require(msg.sender == _transaction.buyer, "Only the buyer involved in the dispute can pay the buyer's fee.");
+        require(_arbitration.status == DisputeStatus.WaitingBuyer,
+            "Can only pay deposit fee when its the buyer's turn to respond."
+        );
         
         _arbitration.arbitrationFee += msg.value;
         _arbitration.buyerArbitrationFee += msg.value;
+        _arbitration.feeDepositDeadline = block.timestamp + arbitrationFeeDepositPeriod;
 
         if(_arbitration.sellerArbitrationFee < arbitrationCost) {
             _arbitration.status = DisputeStatus.WaitingSeller;
@@ -499,17 +504,17 @@ contract Market is IArbitrable, IEvidence {
             arbitration.ruling = Party.None;
         }
 
-        
         emit Ruling(arbitrator, _disputeID, _ruling);
     }
 
     // Executes the ruling given by the arbitrator
     function executeRuling(
         uint _transactionID,
+        uint _disputeID,
         Transaction memory _transaction
     ) external OnlyValidTransaction(_transactionID, _transaction) {
         
-        Arbitration storage arbitration = disputeID_to_arbitration[_transactionID]; // storage init whenever arbitration state change?
+        Arbitration storage arbitration = disputeID_to_arbitration[_disputeID]; // storage init whenever arbitration state change?
         require(arbitration.status == DisputeStatus.Resolved, "An arbitration must be resolved to execute its ruling.");
 
         uint refundAmount = _transaction.locked_price_amount;
@@ -518,22 +523,23 @@ contract Market is IArbitrable, IEvidence {
             refundAmount += arbitration.buyerArbitrationFee;
             refundAmount += arbitration.buyerAppealFee;
 
-            _transaction.buyer.call{value:  refundAmount};
+            console.log(refundAmount);
+            _transaction.buyer.transfer(refundAmount);
         }
 
         if(arbitration.ruling == Party.Seller) {
             refundAmount += arbitration.sellerArbitrationFee;
             refundAmount += arbitration.sellerAppealFee;
 
-            _transaction.seller.call{value:  refundAmount};
+            _transaction.seller.transfer(refundAmount);
         }
 
         if(arbitration.ruling == Party.None) {
             refundAmount += arbitration.sellerArbitrationFee;
             refundAmount += arbitration.sellerAppealFee;
 
-            _transaction.seller.call{value:  (refundAmount)/2};
-            _transaction.buyer.call{value:  (refundAmount)/2};
+            _transaction.seller.transfer((refundAmount)/2);
+            _transaction.buyer.transfer((refundAmount)/2);
         }
         
         _transaction.locked_price_amount = 0;

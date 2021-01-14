@@ -119,7 +119,7 @@ describe("Market contract - Buying flow",  function() {
     });
 
 
-    describe("Dispute cases - seller wins", function() {
+    describe("Dispute cases - seller responds to dispute", function() {
 
         describe("Seller pays arbitration fee", function() {
 

@@ -14,6 +14,8 @@
 pragma solidity >=0.7;
 
 import "./IArbitrator.sol";
+import "hardhat/console.sol";
+
 
 contract SimpleCentralizedArbitrator is IArbitrator {
     address public owner = msg.sender;
@@ -94,8 +96,8 @@ contract SimpleCentralizedArbitrator is IArbitrator {
         require(msg.value >= appealCost(_disputeID, _extraData), "Not enough ETH to cover arbitration costs.");
     }
 
-    function appealPeriod(uint256 _disputeID) public override pure returns (uint256 start, uint256 end) {
+    function appealPeriod(uint256 _disputeID) public override view returns (uint256 start, uint256 end) {
         _disputeID = 0; // dummy statement
-        return (0, 0);
+        return (block.timestamp, block.timestamp + 1 minutes);
     }
 }
