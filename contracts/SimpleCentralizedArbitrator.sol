@@ -21,6 +21,8 @@ contract SimpleCentralizedArbitrator is IArbitrator {
     address public owner = msg.sender;
 
     bool public called; // test variable
+    uint testAppealPeriodStart;
+    uint testAppealPeriodEnd;
 
     struct Dispute {
         IArbitrable arbitrated;
@@ -45,7 +47,7 @@ contract SimpleCentralizedArbitrator is IArbitrator {
     function appealCost(uint256 _disputeID, bytes memory _extraData) public override pure returns (uint256) {
         _disputeID = 0; // dummy statement
         _extraData = ""; // dummy statement
-        return 25; // An unaffordable amount which practically avoids appeals.
+        return 25 ether; // An unaffordable amount which practically avoids appeals.
     }
 
     function createDispute(uint256 _choices, bytes memory _extraData)
@@ -98,6 +100,11 @@ contract SimpleCentralizedArbitrator is IArbitrator {
 
     function appealPeriod(uint256 _disputeID) public override view returns (uint256 start, uint256 end) {
         _disputeID = 0; // dummy statement
-        return (block.timestamp, block.timestamp + 1 minutes);
+        return (testAppealPeriodStart,testAppealPeriodEnd);
+    }
+
+    function setAppealPeriod() external {
+        testAppealPeriodStart = block.timestamp;
+        testAppealPeriodEnd = block.timestamp + 1 minutes; 
     }
 }

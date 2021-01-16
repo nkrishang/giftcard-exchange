@@ -57,6 +57,7 @@ contract Market is IArbitrable, IEvidence {
 
     // Dispute level events (not defined in inherited interfaces)
     event DisputeStateUpdate(uint indexed _disputeID, uint indexed _transactionID, Arbitration _arbitration);
+    event Appeal(uint indexed disputeID, uint indexed _transactionID, Transaction _transaction);
 
     // Fee Payment notifications
     event HasToPayArbitrationFee(uint indexed transactionID, Party party);
@@ -234,7 +235,7 @@ contract Market is IArbitrable, IEvidence {
 
         require(msg.sender == _transaction.buyer, "Only the buyer can call a buyer-withdraw function.");
         require(
-            arbitration.status == DisputeStatus.WaitingSeller,
+            _transaction.status >= Status.Disputed,
             "This function is called only when the seller's payment of the arbitration fee times out."
         );
         require(block.timestamp > arbitration.feeDepositDeadline, "The seller still has time to deposit an arbitration fee.");
@@ -411,6 +412,7 @@ contract Market is IArbitrable, IEvidence {
 
         if(_arbitration.buyerAppealFee < appealCost) {
             _arbitration.status = DisputeStatus.WaitingBuyer;
+            emit DisputeStateUpdate( _transaction.disputeID, _transactionID, _arbitration);
             emit HasToPayAppealFee(_transactionID, Party.Buyer);
         } else {
             _arbitration.appealRound++;
@@ -441,6 +443,7 @@ contract Market is IArbitrable, IEvidence {
 
         if(_arbitration.sellerAppealFee < appealCost) {
             _arbitration.status = DisputeStatus.WaitingSeller;
+            emit DisputeStateUpdate( _transaction.disputeID, _transactionID, _arbitration);
             emit HasToPayAppealFee(_transactionID, Party.Seller);
         } else {
             _arbitration.appealRound++;
@@ -480,6 +483,7 @@ contract Market is IArbitrable, IEvidence {
 
         emit TransactionStateUpdate(_transactionID, _transaction);
         emit DisputeStateUpdate( _transaction.disputeID, _transactionID, arbitration);
+        emit Appeal(_transaction.disputeID, _transactionID, _transaction);
     }
 
     // Called by the arbitrator contract to give a ruling on a dispute - see IArbitrable i.e. ERC 792 Arbitrable interface.
