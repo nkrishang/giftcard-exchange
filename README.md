@@ -9,7 +9,7 @@ DGCX is a platform to buy and sell gift cards online. Transactions between buyer
 ### How it all works - example scenario
 
 #### Listing a gift card for sale.
-1. Alice has a $50 Target Gift Card... she doesn't live near a Target so she decides to sell on DGCX (because she is fearful of getting scammed on r/giftcardexchange).
+1. Alice has a $50 Target Gift Card. She doesn't live near a Target so she decides to sell on DGCX (because she is fearful of getting scammed on r/giftcardexchange).
 - Alice lists her $50 Target GC on DGCX which she wants to sell for $40 worth of ETH.
 - To list the card, Alice must follow the evidence submission flow on the DGCX UI. This ensures that Alice's card indeed has the claimed balance at the time of listing. 
 
