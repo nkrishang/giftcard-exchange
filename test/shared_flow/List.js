@@ -36,7 +36,7 @@ describe("Market contract - Listing flow",  function() {
 
         it("Should emit a Transaction event when a giftcard is listed", async function() {
             let price = ethers.utils.parseEther("1");
-            await expect(market.listNewCard(cardInfo_hash, price)).to.emit(market, "TransactionCreated");
+            await expect(market.listNewCard(cardInfo_hash, price)).to.emit(market, "TransactionStateUpdate");
         })
 
         it("Should emit a Transaction event with the updated transaction state", async function() {
@@ -44,7 +44,7 @@ describe("Market contract - Listing flow",  function() {
             let price = ethers.utils.parseEther("1");
 
             let transactionPromise = new Promise((resolve, reject) => {
-                market.on("TransactionCreated", (_transactionID, _transaction, _arbitration, event) => {
+                market.on("TransactionStateUpdate", (_transactionID, _transaction, _arbitration, event) => {
                     
                     event.removeListener();
 

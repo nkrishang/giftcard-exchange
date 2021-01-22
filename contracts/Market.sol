@@ -19,7 +19,7 @@ import "hardhat/console.sol";
 
 contract Market is IArbitrable, IEvidence {
 
-    //====== Contract state variables. ======
+    //========== Contract variables ============
 
     address public owner;
     IArbitrator public arbitrator;
@@ -29,22 +29,19 @@ contract Market is IArbitrable, IEvidence {
     uint numOfRulingOptions = 2;
 
 
-
-    //===== Data structures for the contract. =====
-
     enum Party {None, Buyer ,Seller}
     enum Status {None, Pending, Disputed, Appealed, Resolved}
     enum DisputeStatus {None, WaitingSeller, WaitingBuyer, Processing, Resolved}
     enum RulingOptions {RefusedToArbitrate, BuyerWins, SellerWins}
 
-    // Transaction level events 
+    /// @dev Transaction level events 
     event TransactionStateUpdate(uint indexed _transactionID, Transaction _transaction);
     event TransactionResolved(uint indexed _transactionID, Transaction _transaction);
 
-    // Dispute level events (not defined in inherited interfaces)
+    /// @dev Dispute level events (not defined in inherited interfaces)
     event DisputeStateUpdate(uint indexed _disputeID, uint indexed _transactionID, Arbitration _arbitration);
 
-    // Fee Payment notifications 
+    /// @dev Fee Payment notifications 
     event HasToPayArbitrationFee(uint indexed transactionID, Party party);
     event HasToPayAppealFee(uint indexed transactionID, Party party);
     
@@ -82,6 +79,7 @@ contract Market is IArbitrable, IEvidence {
         Party ruling;
     }
 
+    /// @dev Stores transaction hashses. For a given tx, Transaction ID = (index at tx_hashes) + 1.
     bytes32[] public tx_hashes;
 
     mapping(uint => Arbitration) public disputeID_to_arbitration;
@@ -91,10 +89,7 @@ contract Market is IArbitrable, IEvidence {
         owner = msg.sender;
     }
 
-
-    // Contract main functions
-
-    modifier OnlyValidTransaction(uint _transactionID, Transaction memory _transaction) {
+    modifier onlyValidTransaction(uint _transactionID, Transaction memory _transaction) {
         require(
             tx_hashes[_transactionID - 1] == hashTransactionState(_transaction), 
             "Transaction doesn't match stored hash."
@@ -105,7 +100,11 @@ contract Market is IArbitrable, IEvidence {
     
     //========== Contract functions ============
 
-    // Allows a seller to list a gift card.
+    /**
+     * @dev List a gift card.
+     * @param _cardInfo The keccak 256 hash of URI where gift card info is stored.
+     * @param _price The price of the gift card.
+     */
     function listNewCard(bytes32 _cardInfo, uint _price) external {
 
         Transaction memory transaction = Transaction({
@@ -130,12 +129,17 @@ contract Market is IArbitrable, IEvidence {
         event TransactionStateUpdate(transactionID, transaction);
     }
 
-    // Allows a buyer to engage in the sale of a gift card.
+    /**
+     * @dev Buy a gift card.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _transaction  The transaction state.
+     * @param _metaevidence Link to the meta-evidence; in compliance with ERC 1497 evidence standard.
+     */
     function buyCard(
         uint _transactionID,
         Transaction memory _transaction,
         string calldata _metaevidence
-    ) external payable OnlyValidTransaction(_transactionID, _transaction) {
+    ) external payable onlyValidTransaction(_transactionID, _transaction) {
 
         require(_transaction.status == Status.None, "Can't purchase an item already engaged in sale.");
         require(_transaction.forSale, "Cannot purchase item not for sale.");
@@ -153,22 +157,15 @@ contract Market is IArbitrable, IEvidence {
         emit MetaEvidence(_transactionID, _metaevidence);
     }
 
-    // Allows buyer to get the (hash of) URI containing gift card information.
-    function getCardInfo (
-        uint _transactionID,
-        Transaction memory _transaction
-    ) external view OnlyValidTransaction(_transactionID, _transaction)  returns (bytes32 _cardInfo) {
-
-        require(_transaction.buyer == msg.sender, "Only the buyer can retrieve item info.");
-        _cardInfo = _transaction.cardInfo_URI_hash;
-    }
-
-
-    // Allows seller to withdraw price from escrow (Case: no disputes raised.)
+    /**
+     * @dev Let seller withraw the price paid by buyer.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _transaction  The transaction state.
+     */
     function withdrawPriceBySeller(
         uint _transactionID,
         Transaction memory _transaction
-        ) external OnlyValidTransaction(_transactionID, _transaction) {
+        ) external onlyValidTransaction(_transactionID, _transaction) {
 
         // Write a succint filter statement later.
         require(msg.sender == _transaction.seller, "Only the seller can call a seller-withdraw function.");
@@ -184,11 +181,15 @@ contract Market is IArbitrable, IEvidence {
         emit TransactionResolved(_transactionID, _transaction);
     }
 
-    // Allows buyer to withdraw price + fees from escrow (Case: dispute raised; appeal possibly raised)
+    /**
+     * @dev Let buyer withraw the price paid for the gift card.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _transaction  The transaction state.
+     */
     function withdrawPriceByBuyer(
         uint _transactionID,
         Transaction memory _transaction
-        ) external OnlyValidTransaction(_transactionID, _transaction) {
+        ) external onlyValidTransaction(_transactionID, _transaction) {
         
         Arbitration storage arbitration = disputeID_to_arbitration[_transaction.disputeID];
 
@@ -216,11 +217,15 @@ contract Market is IArbitrable, IEvidence {
     }       
   
 
-    // Allows buyer to raise a dispute - must be raised within the recalim window - buyer must deposit arbitration fee.
+    /**
+     * @dev Let buyer dispute the transaction by paying arbitration fees.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _transaction  The transaction state.
+     */
     function reclaimDisputeByBuyer(
         uint _transactionID,
         Transaction memory _transaction
-        ) external payable OnlyValidTransaction(_transactionID, _transaction) {
+        ) external payable onlyValidTransaction(_transactionID, _transaction) {
 
         require(msg.sender == _transaction.buyer, "Only the buyer of the card can raise a reclaim dispute.");
         require(block.timestamp - _transaction.init < reclaimPeriod, "Cannot reclaim price after the reclaim window is closed.");
@@ -257,13 +262,19 @@ contract Market is IArbitrable, IEvidence {
         emit HasToPayArbitrationFee(_transactionID, Party.Seller);
     }
 
-    // Allows seller to engage with the buyer-raised dispute - must be raised before the fee deposit deadline - must pay arbitration fee.
+    /**
+     * @dev Let seller pay arbitration fees in case of a dispute.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _metaevidenceID Equal to the transaction ID; in compliance with ERC 1497 evidence standard.
+     * @param _transaction  The transaction state.
+     * @param _arbitration The arbitration state.
+     */
     function payArbitrationFeeBySeller(
         uint _transactionID,
         uint _metaevidenceID,
         Transaction memory _transaction,
         Arbitration memory _arbitration
-        ) public payable OnlyValidTransaction(_transactionID, _transaction) {
+        ) public payable onlyValidTransaction(_transactionID, _transaction) {
 
         uint arbitrationCost = arbitrator.arbitrationCost("");
         require(
@@ -289,13 +300,19 @@ contract Market is IArbitrable, IEvidence {
         }
     }
 
-    // Allows buyer to pay remaining arbitration fees. (Case: arbitration cost was higher when seller deposited fee)
+    /**
+     * @dev Let buyer pay arbitration fees in case of a dispute.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _metaevidenceID Equal to the transaction ID; in compliance with ERC 1497 evidence standard.
+     * @param _transaction  The transaction state.
+     * @param _arbitration The arbitration state.
+     */
     function payArbitrationFeeByBuyer(
         uint _transactionID,
         uint _metaevidenceID,
         Transaction memory _transaction,
         Arbitration memory _arbitration
-        ) public payable OnlyValidTransaction(_transactionID, _transaction) {
+        ) public payable onlyValidTransaction(_transactionID, _transaction) {
 
         uint arbitrationCost = arbitrator.arbitrationCost("");
         require(
@@ -322,7 +339,14 @@ contract Market is IArbitrable, IEvidence {
     }
 
 
-    // Calls the arbitrator contract to create a dispute - internally called - no checks
+    /**
+     * @dev Call Arbitratble contract to create dispute.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _arbitrationCost Arbitration fee set by the Arbitrator contract.
+     * @param _metaevidenceID Equal to the transaction ID; in compliance with ERC 1497 evidence standard.
+     * @param _transaction  The transaction state.
+     * @param _arbitration The arbitration state.
+     */
     function raiseDispute(
         uint _transactionID,
         uint _metaEvidenceID,
@@ -356,12 +380,17 @@ contract Market is IArbitrable, IEvidence {
         emit Dispute(arbitrator, _transaction.disputeID, _metaEvidenceID, _transactionID);
     }
 
-    // Allows buyer to pay appeal fee - must be paid in the appeal window set by arbitrator.
+    /**
+     * @dev Let seller pay appeal fees in case of a dispute.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _transaction  The transaction state.
+     * @param _arbitration The arbitration state.
+     */
     function payAppealFeeBySeller(
         uint _transactionID,
         Transaction memory _transaction,
         Arbitration memory _arbitration
-    ) public payable OnlyValidTransaction(_transactionID, _transaction) {
+    ) public payable onlyValidTransaction(_transactionID, _transaction) {
 
         require(_transaction.status >= Status.Disputed, "There is no dispute to appeal.");
 
@@ -387,12 +416,17 @@ contract Market is IArbitrable, IEvidence {
         }
     }
 
-    // Allows buyer to pay appeal fee - must be paid in the appeal window set by arbitrator.
+    /**
+     * @dev Let buyer pay appeal fees in case of a dispute.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _transaction  The transaction state.
+     * @param _arbitration The arbitration state.
+     */
     function payAppealFeeByBuyer(   
         uint _transactionID,
         Transaction memory _transaction,
         Arbitration memory _arbitration
-    ) public payable OnlyValidTransaction(_transactionID, _transaction) {
+    ) public payable onlyValidTransaction(_transactionID, _transaction) {
 
         require(_transaction.status >= Status.Disputed, "There is no dispute to appeal.");
 
@@ -418,11 +452,16 @@ contract Market is IArbitrable, IEvidence {
         }
     }
 
-    // Calls the arbitrator contract to create an appeal - internally called - no checks
+    /**
+     * @dev Call Arbitrator contract to appeal a ruling.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card.
+     * @param _transaction  The transaction state.
+     * @param _appealCost Appeal fees set by the Arbitrator contract.
+     */
     function appealTransaction(
         uint _transactionID,
-        uint _appealCost,
-        Transaction memory _transaction
+        Transaction memory _transaction,
+        uint _appealCost
         ) internal {
 
         _transaction.status = Status.Appealed;
@@ -452,7 +491,11 @@ contract Market is IArbitrable, IEvidence {
         emit DisputeStateUpdate( _transaction.disputeID, _transactionID, arbitration);
     }
 
-    // Called by the arbitrator contract to give a ruling on a dispute - see IArbitrable i.e. ERC 792 Arbitrable interface.
+    /**
+     * @dev Called by the Arbitrator contract; in compliance with ERC 792 Arbitrable standard.
+     * @param _disputeID ID of the dispute in the Arbitrator contract.
+     * @param _ruling Ruling given by the arbitrator. Note that 0 is reserved for "Not able/wanting to make a decision".
+     */
     function rule(uint256 _disputeID, uint256 _ruling) external override {
 
         require(msg.sender == address(arbitrator), "Only the arbitrator can give a ruling.");
@@ -477,12 +520,17 @@ contract Market is IArbitrable, IEvidence {
         emit Ruling(arbitrator, _disputeID, _ruling);
     }
 
-    // Executes the ruling given by the arbitrator
+    /**
+     * @dev Executes the ruling given by the Arbitrator contract.
+     * @param _transactionID The unique ID of the transaction associated with a unique gift card. 
+     * @param _disputeID ID of the dispute in the Arbitrator contract.
+     * @param _transaction The transaction state.
+     */
     function executeRuling(
         uint _transactionID,
         uint _disputeID,
         Transaction memory _transaction
-    ) external OnlyValidTransaction(_transactionID, _transaction) {
+    ) external onlyValidTransaction(_transactionID, _transaction) {
         
         Arbitration storage arbitration = disputeID_to_arbitration[_disputeID]; // storage init whenever arbitration state change?
         require(arbitration.status == DisputeStatus.Resolved, "An arbitration must be resolved to execute its ruling.");
@@ -518,12 +566,16 @@ contract Market is IArbitrable, IEvidence {
         emit TransactionResolved(_transactionID, _transaction);
     }
 
-    // Allows either party of a transaction to submit evidence whether or not a dispute has been raised.
+    /** @dev Submit a reference to evidence. EVENT.
+     *  @param _transactionID The index of the transaction.
+     *  @param _transaction The transaction state.
+     *  @param _evidence A link to an evidence using its URI.
+     */
     function submiteEvidence(
         uint _transactionID,
         Transaction memory _transaction,
         string calldata _evidence
-    ) public OnlyValidTransaction(_transactionID, _transaction) {
+    ) public onlyValidTransaction(_transactionID, _transaction) {
 
         require(
             msg.sender == _transaction.seller || msg.sender == _transaction.buyer,
@@ -537,8 +589,8 @@ contract Market is IArbitrable, IEvidence {
         emit Evidence(arbitrator, _transactionID, msg.sender, _evidence);
     }
 
-    // Setter functions for contract state variables.
- 
+    /// @dev Setter functions for contract state variables.
+    
     function setReclaimationPeriod(uint _newReclaimPeriod) external {
         require(msg.sender == owner, "Only the owner of the contract can change reclaim period.");
         reclaimPeriod = _newReclaimPeriod;
@@ -559,7 +611,7 @@ contract Market is IArbitrable, IEvidence {
         emit TransactionStateUpdate(_transactionID, _transaction);
     }
 
-    // Utility functions
+    /// @dev Utility functions
 
     function hashTransactionState(Transaction memory _transaction) public pure returns (bytes32) {
         
