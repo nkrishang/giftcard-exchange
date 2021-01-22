@@ -8,19 +8,6 @@
  * SPDX-License-Identifier: MIT
 **/
 
-/**
-
-TO DO:
-
-- Write descriptions for contract data.
-- Hardhat tests
-- General cleanup of contract.
-
-*/
-
-
-
-// Make imports from the kleros SDK
 import "./IArbitrable.sol";
 import "./IArbitrator.sol";
 import "./IEvidence.sol";
@@ -34,11 +21,11 @@ contract Market is IArbitrable, IEvidence {
 
     //====== Contract state variables. ======
 
-    address public owner; // temp variable for testing (?)
-    IArbitrator public arbitrator; // Initialize arbitrator in the constructor. Make immutable on deployment(?)
+    address public owner;
+    IArbitrator public arbitrator;
 
-    uint arbitrationFeeDepositPeriod = 1 minutes; // This is a test value. Actual: 1 days.
-    uint reclaimPeriod = 1 minutes; // This is a test value. Actual: 6 hours.
+    uint arbitrationFeeDepositPeriod = 1 days; // For testing, change to: 1 minutes.
+    uint reclaimPeriod = 6 hours; // For testing, change to: 1 minutes
     uint numOfRulingOptions = 2;
 
 
@@ -51,25 +38,20 @@ contract Market is IArbitrable, IEvidence {
     enum RulingOptions {RefusedToArbitrate, BuyerWins, SellerWins}
 
     // Transaction level events 
-    event TransactionCreated(uint indexed _transactionID, Transaction _transaction, Arbitration _arbitration);
     event TransactionStateUpdate(uint indexed _transactionID, Transaction _transaction);
     event TransactionResolved(uint indexed _transactionID, Transaction _transaction);
 
     // Dispute level events (not defined in inherited interfaces)
     event DisputeStateUpdate(uint indexed _disputeID, uint indexed _transactionID, Arbitration _arbitration);
-    event Appeal(uint indexed disputeID, uint indexed _transactionID, Transaction _transaction);
 
-    // Fee Payment notifications
+    // Fee Payment notifications 
     event HasToPayArbitrationFee(uint indexed transactionID, Party party);
-    event HasPaidArbitrationFee(uint indexed transactionID, Party party);
-
     event HasToPayAppealFee(uint indexed transactionID, Party party);
-    event HasPaidAppealFee(uint indexed transactionID, Party party);
     
 
     struct Transaction {
         uint price;
-        bool forSale; // redundant
+        bool forSale;
 
         address payable seller;
         address payable buyer;
@@ -77,7 +59,6 @@ contract Market is IArbitrable, IEvidence {
 
         Status status;
         uint init;
-        uint locked_price_amount;
 
         uint disputeID;
     }
@@ -138,7 +119,6 @@ contract Market is IArbitrable, IEvidence {
             status: Status.None,
 
             init: 0,
-            locked_price_amount: 0,
 
             disputeID: 0 
         });
@@ -147,25 +127,7 @@ contract Market is IArbitrable, IEvidence {
         tx_hashes.push(tx_hash);
         uint transactionID = tx_hashes.length;
 
-        Arbitration memory arbitration = Arbitration({
-            transactionID: transactionID,
-            status: DisputeStatus.None,
-            feeDepositDeadline: 0,
-
-            buyerArbitrationFee: 0,
-            sellerArbitrationFee: 0,
-            arbitrationFee: 0,
-
-            appealRound: 0,
-
-            buyerAppealFee: 0,
-            sellerAppealFee: 0,
-            appealFee: 0,
-            
-            ruling: Party.None
-        });
-
-        emit TransactionCreated(transactionID, transaction, arbitration);
+        event TransactionStateUpdate(transactionID, transaction);
     }
 
     // Allows a buyer to engage in the sale of a gift card.
@@ -183,7 +145,6 @@ contract Market is IArbitrable, IEvidence {
         _transaction.status = Status.Pending;
         _transaction.forSale = false;
         _transaction.buyer = msg.sender;
-        _transaction.locked_price_amount = msg.value; // yoyo
         _transaction.init = block.timestamp;
 
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
@@ -216,9 +177,7 @@ contract Market is IArbitrable, IEvidence {
 
         _transaction.status = Status.Resolved;
 
-        uint amount = _transaction.locked_price_amount;
-        _transaction.locked_price_amount = 0;
-
+        uint amount = _transaction.price;
         msg.sender.call{value: amount};
 
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
@@ -247,18 +206,12 @@ contract Market is IArbitrable, IEvidence {
                 "Seller still has time to fund an appeal."
             );
         }
-
-        
         arbitration.status = DisputeStatus.Resolved;
 
-        uint refundAmount = _transaction.locked_price_amount;
-        _transaction.locked_price_amount = 0;
-        tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
-
+        uint refundAmount = _transaction.price;
         refundAmount += (arbitration.buyerArbitrationFee + arbitration.buyerAppealFee);
         msg.sender.call{value: refundAmount};
 
-        emit TransactionStateUpdate(_transactionID, _transaction);
         emit TransactionResolved(_transactionID, _transaction);
     }       
   
@@ -266,8 +219,7 @@ contract Market is IArbitrable, IEvidence {
     // Allows buyer to raise a dispute - must be raised within the recalim window - buyer must deposit arbitration fee.
     function reclaimDisputeByBuyer(
         uint _transactionID,
-        Transaction memory _transaction,
-        Arbitration memory _arbitration
+        Transaction memory _transaction
         ) external payable OnlyValidTransaction(_transactionID, _transaction) {
 
         require(msg.sender == _transaction.buyer, "Only the buyer of the card can raise a reclaim dispute.");
@@ -277,16 +229,31 @@ contract Market is IArbitrable, IEvidence {
         uint arbitrationCost = arbitrator.arbitrationCost(""); // What is passed in for extraData?
         require(msg.value >= arbitrationCost, "Must deposit the right arbitration fee to reclaim paid price.");
 
-        _arbitration.feeDepositDeadline = block.timestamp + arbitrationFeeDepositPeriod;
-        _arbitration.arbitrationFee += msg.value;
-        _arbitration.buyerArbitrationFee += msg.value;
-        _arbitration.status = DisputeStatus.WaitingSeller;
+        Arbitration memory arbitration = Arbitration({
+            transactionID: _transactionID,
+            status: DisputeStatus.WaitingSeller,
+            feeDepositDeadline: block.timestamp + arbitrationFeeDepositPeriod,
+
+            buyerArbitrationFee: msg.value,
+            sellerArbitrationFee: 0,
+            arbitrationFee: msg.value,
+
+            appealRound: 0,
+
+            buyerAppealFee: 0,
+            sellerAppealFee: 0,
+            appealFee: 0,
+            
+            ruling: Party.None
+        });
 
         _transaction.status = Status.Disputed;
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
 
+        uint noDisputeID = 0;
+
         emit TransactionStateUpdate(_transactionID, _transaction);
-        emit DisputeStateUpdate(_transaction.disputeID, _transactionID, _arbitration);
+        emit DisputeStateUpdate(noDisputeID, _transactionID, arbitration);
         emit HasToPayArbitrationFee(_transactionID, Party.Seller);
     }
 
@@ -483,7 +450,6 @@ contract Market is IArbitrable, IEvidence {
 
         emit TransactionStateUpdate(_transactionID, _transaction);
         emit DisputeStateUpdate( _transaction.disputeID, _transactionID, arbitration);
-        emit Appeal(_transaction.disputeID, _transactionID, _transaction);
     }
 
     // Called by the arbitrator contract to give a ruling on a dispute - see IArbitrable i.e. ERC 792 Arbitrable interface.
@@ -521,7 +487,7 @@ contract Market is IArbitrable, IEvidence {
         Arbitration storage arbitration = disputeID_to_arbitration[_disputeID]; // storage init whenever arbitration state change?
         require(arbitration.status == DisputeStatus.Resolved, "An arbitration must be resolved to execute its ruling.");
 
-        uint refundAmount = _transaction.locked_price_amount;
+        uint refundAmount = _transaction.price;
 
         if(arbitration.ruling == Party.Buyer) {
             refundAmount += arbitration.buyerArbitrationFee;
@@ -546,13 +512,10 @@ contract Market is IArbitrable, IEvidence {
             _transaction.buyer.transfer((refundAmount)/2);
         }
         
-        _transaction.locked_price_amount = 0;
         _transaction.status = Status.Resolved;
         tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
 
-        emit TransactionStateUpdate(_transactionID, _transaction);
         emit TransactionResolved(_transactionID, _transaction);
-
     }
 
     // Allows either party of a transaction to submit evidence whether or not a dispute has been raised.
@@ -596,32 +559,25 @@ contract Market is IArbitrable, IEvidence {
         emit TransactionStateUpdate(_transactionID, _transaction);
     }
 
-    // Getter functions for contract state variables.
-
-    function getNumOfTransactions() external view returns (uint) {
-        return tx_hashes.length;
-    } 
-
     // Utility functions
 
-    function hashTransactionState(Transaction memory transaction) public pure returns (bytes32) {
+    function hashTransactionState(Transaction memory _transaction) public pure returns (bytes32) {
         
         // Hash the whole transaction
 
         return keccak256(
             abi.encodePacked(
-                transaction.price,
-                transaction.forSale,
+                _transaction.price,
+                _transaction.forSale,
 
-                transaction.seller,
-                transaction.buyer,
-                transaction.cardInfo_URI_hash,
+                _transaction.seller,
+                _transaction.buyer,
+                _transaction.cardInfo_URI_hash,
 
-                transaction.status,
-                transaction.init,
-                transaction.locked_price_amount,
+                _transaction.status,
+                _transaction.init,
 
-                transaction.disputeID
+                _transaction.disputeID
             )
         );
     }
