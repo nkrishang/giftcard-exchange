@@ -41,7 +41,7 @@ describe("Market contract - Buying flow",  function() {
 
         listEvent = new Promise((resolve, reject) => {
 
-            market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
+            market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
                 
                 event.removeListener();
 
@@ -52,7 +52,7 @@ describe("Market contract - Buying flow",  function() {
             })
 
             setTimeout(() => {
-                reject(new Error("TransactionCreated event timeout."));
+                reject(new Error("TransactionStateUpdate event timeout."));
             }, 60000);
         })
 

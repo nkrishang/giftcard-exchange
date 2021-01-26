@@ -44,15 +44,13 @@ describe("Market contract - Listing flow",  function() {
             let price = ethers.utils.parseEther("1");
 
             let transactionPromise = new Promise((resolve, reject) => {
-                market.on("TransactionStateUpdate", (_transactionID, _transaction, _arbitration, event) => {
+                market.on("TransactionStateUpdate", (_transactionID, _transaction, event) => {
                     
                     event.removeListener();
 
                     // Check if the event parameters are retrieved correctly.
 
                     expect(_transactionID.toString()).to.equal(numOfTransactions.toString());
-                    expect(_arbitration[0].toString()).to.equal(numOfTransactions.toString());
-
                     resolve();
                 })
 
@@ -62,7 +60,7 @@ describe("Market contract - Listing flow",  function() {
             })
 
             await market.listNewCard(cardInfo_hash, price);
-            const numOfTransactions = await market.getNumOfTransactions();
+            const numOfTransactions = await market.getNumOfTransactions()
 
             await transactionPromise;
         })

@@ -38,18 +38,17 @@ describe("Market contract - Buying flow",  function() {
         market = await MarketFactory.deploy(arbitrator.address);
 
 
-        // Shared logic by tests - 1) seller listing the gift card to be bought - 2) buyer buying the card.
+        // Shared logic by tests - listing the gift card to be bought by the buyer.
         price = ethers.utils.parseEther("1");
         cardInfo_hash = ethers.utils.keccak256(ethers.utils.formatBytes32String("giftcard information"));
         metaevidence = "ERC 1497 compliant metavidence";
 
         listEvent = new Promise((resolve, reject) => {
 
-            market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
+            market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
                 
                 event.removeListener();
 
-                arbitration = _arbitration;
                 transactionID = _transactionID;
                 transactionObj = _transactionObj;
 
@@ -57,15 +56,20 @@ describe("Market contract - Buying flow",  function() {
             })
 
             setTimeout(() => {
-                reject(new Error("TransactionCreated event timeout."));
+                reject(new Error("TransactionStateUpdate event timeout."));
             }, 60000);
         })
+
+        await market.connect(seller).listNewCard(cardInfo_hash, price);
+        await listEvent;
 
         buyEvent = new Promise((resolve, reject) => {
 
             market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
                 
                 event.removeListener();
+
+                transactionID = _transactionID;
                 transactionObj = _transactionObj;
 
                 resolve();
@@ -75,9 +79,6 @@ describe("Market contract - Buying flow",  function() {
                 reject(new Error("TransactionStateUpdate timeout"));
             }, 60000);
         })
-
-        await market.connect(seller).listNewCard(cardInfo_hash, price);
-        await listEvent;
 
         await market.connect(buyer).buyCard(transactionID, transactionObj, metaevidence, {value: price});
         await buyEvent;
@@ -141,7 +142,7 @@ describe("Market contract - Buying flow",  function() {
                 }, 20000);
             })
 
-            await market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")});
+            await market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, {value: ethers.utils.parseEther("1")});
             await reclaimEvent;
 
             await new Promise((resolve, reject) => {

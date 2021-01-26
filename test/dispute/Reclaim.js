@@ -38,18 +38,17 @@ describe("Market contract - Buying flow",  function() {
         market = await MarketFactory.deploy(arbitrator.address);
 
 
-        // Shared logic by tests - 1) seller listing the gift card to be bought - 2) buyer buying the card.
+        // Shared logic by tests - listing the gift card to be bought by the buyer.
         price = ethers.utils.parseEther("1");
         cardInfo_hash = ethers.utils.keccak256(ethers.utils.formatBytes32String("giftcard information"));
         metaevidence = "ERC 1497 compliant metavidence";
 
         listEvent = new Promise((resolve, reject) => {
 
-            market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
+            market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
                 
                 event.removeListener();
 
-                arbitration = _arbitration;
                 transactionID = _transactionID;
                 transactionObj = _transactionObj;
 
@@ -57,15 +56,20 @@ describe("Market contract - Buying flow",  function() {
             })
 
             setTimeout(() => {
-                reject(new Error("TransactionCreated event timeout."));
+                reject(new Error("TransactionStateUpdate event timeout."));
             }, 60000);
         })
+
+        await market.connect(seller).listNewCard(cardInfo_hash, price);
+        await listEvent;
 
         buyEvent = new Promise((resolve, reject) => {
 
             market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
                 
                 event.removeListener();
+
+                transactionID = _transactionID;
                 transactionObj = _transactionObj;
 
                 resolve();
@@ -76,9 +80,6 @@ describe("Market contract - Buying flow",  function() {
             }, 60000);
         })
 
-        await market.connect(seller).listNewCard(cardInfo_hash, price);
-        await listEvent;
-
         await market.connect(buyer).buyCard(transactionID, transactionObj, metaevidence, {value: price});
         await buyEvent;
     });
@@ -88,17 +89,17 @@ describe("Market contract - Buying flow",  function() {
         describe("State update events", function() {
             it("Should emit Transaction state update event", async function() {
 
-                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}))
+                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, {value: ethers.utils.parseEther("1")}))
                     .to.emit(market, "TransactionStateUpdate")
             })
     
             it("Should emit Dispute state update event", async function() {
-                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}))
+                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, {value: ethers.utils.parseEther("1")}))
                     .to.emit(market, "DisputeStateUpdate")
             })
     
             it("Should emit a reminder event that the seller has to pay fees", async function() {
-                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}))
+                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, {value: ethers.utils.parseEther("1")}))
                     .to.emit(market, "HasToPayArbitrationFee")
             })
         });
@@ -138,7 +139,7 @@ describe("Market contract - Buying flow",  function() {
                 });
 
                 await market.connect(buyer).reclaimDisputeByBuyer(
-                    transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
+                    transactionID, transactionObj, {value: ethers.utils.parseEther("1")}
                 );
 
                 await reclaimTransactionEvent;
@@ -152,22 +153,9 @@ describe("Market contract - Buying flow",  function() {
                         
                         event.removeListener();
 
-                        let structEqual = true;
-
-                        if(_arbitration.length != arbitration.length) {
-                            structEqual = false;
-                        } else {
-                            for(let i = 0; i < _arbitration.length; i++) {
-                                if(arbitration[i] != _arbitration[i]) {
-                                    structEqual = false;
-                                    break;
-                                }
-                            };
-                        }
-
                         expect(_disputeID).to.equal("0");
                         expect(_transactionID).to.equal(transactionID);
-                        expect(structEqual).to.equal(false);
+                        expect(_arbitration[0]).to.equal(transactionID);
         
                         resolve();
                     })
@@ -178,7 +166,7 @@ describe("Market contract - Buying flow",  function() {
                 });
 
                 await market.connect(buyer).reclaimDisputeByBuyer(
-                    transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
+                    transactionID, transactionObj, {value: ethers.utils.parseEther("1")}
                 );
 
                 await reclaimDisputeEvent;
@@ -204,7 +192,7 @@ describe("Market contract - Buying flow",  function() {
                 });
 
                 await market.connect(buyer).reclaimDisputeByBuyer(
-                    transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
+                    transactionID, transactionObj, {value: ethers.utils.parseEther("1")}
                 );
 
                 await reclaimReminderEvent;
@@ -215,7 +203,7 @@ describe("Market contract - Buying flow",  function() {
         describe("Revert cases", function() {
 
             it("Should not allow someone other than the buyer to raise reclaim dispute", async function() {
-                await expect(market.connect(foreignParty).reclaimDisputeByBuyer(transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}))
+                await expect(market.connect(foreignParty).reclaimDisputeByBuyer(transactionID, transactionObj, {value: ethers.utils.parseEther("1")}))
                     .to.be.revertedWith(market, "Only the buyer of the card can raise a reclaim dispute.")
             })
 
@@ -229,7 +217,7 @@ describe("Market contract - Buying flow",  function() {
                     }, 60000);
                 })
 
-                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}))
+                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, {value: ethers.utils.parseEther("1")}))
                     .to.be.revertedWith(market, "Cannot reclaim price after the reclaim window is closed.")
             })
 
@@ -264,12 +252,12 @@ describe("Market contract - Buying flow",  function() {
                 });
 
                 await market.connect(buyer).reclaimDisputeByBuyer(
-                    transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}
+                    transactionID, transactionObj, {value: ethers.utils.parseEther("1")}
                 );
                 await reclaimTransactionEvent;
                 await reclaimDisputeEvent;
 
-                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, arbitration, {value: ethers.utils.parseEther("1")}))
+                await expect(market.connect(buyer).reclaimDisputeByBuyer(transactionID, transactionObj, {value: ethers.utils.parseEther("1")}))
                     .to.be.revertedWith(market, "Can raise a reclaim dispute pending state.")
             })
         })

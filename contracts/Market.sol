@@ -24,8 +24,8 @@ contract Market is IArbitrable, IEvidence {
     address public owner;
     IArbitrator public arbitrator;
 
-    uint arbitrationFeeDepositPeriod = 1 days; // For testing, change to: 1 minutes.
-    uint reclaimPeriod = 6 hours; // For testing, change to: 1 minutes
+    uint arbitrationFeeDepositPeriod = 1 minutes; // For production, change to: 1 days.
+    uint reclaimPeriod = 1 minutes; // For production, change to: 1 days.
     uint numOfRulingOptions = 2;
 
 
@@ -90,6 +90,7 @@ contract Market is IArbitrable, IEvidence {
     }
 
     modifier onlyValidTransaction(uint _transactionID, Transaction memory _transaction) {
+        // console.logBytes32(tx_hashes[_transactionID - 1]);
         require(
             tx_hashes[_transactionID - 1] == hashTransactionState(_transaction), 
             "Transaction doesn't match stored hash."
@@ -125,8 +126,9 @@ contract Market is IArbitrable, IEvidence {
         bytes32 tx_hash = hashTransactionState(transaction);
         tx_hashes.push(tx_hash);
         uint transactionID = tx_hashes.length;
+        // console.logBytes32(tx_hashes[transactionID - 1]);
 
-        event TransactionStateUpdate(transactionID, transaction);
+        emit TransactionStateUpdate(transactionID, transaction);
     }
 
     /**
@@ -151,7 +153,9 @@ contract Market is IArbitrable, IEvidence {
         _transaction.buyer = msg.sender;
         _transaction.init = block.timestamp;
 
-        tx_hashes[_transactionID -1] = hashTransactionState(_transaction);
+        tx_hashes[_transactionID - 1] =hashTransactionState(_transaction);
+        // console.logBytes32(tx_hashes[_transactionID - 1]);
+        // console.logBytes32(new_hash);
 
         emit TransactionStateUpdate(_transactionID, _transaction);
         emit MetaEvidence(_transactionID, _metaevidence);
@@ -343,7 +347,7 @@ contract Market is IArbitrable, IEvidence {
      * @dev Call Arbitratble contract to create dispute.
      * @param _transactionID The unique ID of the transaction associated with a unique gift card.
      * @param _arbitrationCost Arbitration fee set by the Arbitrator contract.
-     * @param _metaevidenceID Equal to the transaction ID; in compliance with ERC 1497 evidence standard.
+     * @param _metaEvidenceID Equal to the transaction ID; in compliance with ERC 1497 evidence standard.
      * @param _transaction  The transaction state.
      * @param _arbitration The arbitration state.
      */
@@ -460,8 +464,8 @@ contract Market is IArbitrable, IEvidence {
      */
     function appealTransaction(
         uint _transactionID,
-        Transaction memory _transaction,
-        uint _appealCost
+        uint _appealCost,
+        Transaction memory _transaction
         ) internal {
 
         _transaction.status = Status.Appealed;
@@ -632,6 +636,18 @@ contract Market is IArbitrable, IEvidence {
                 _transaction.disputeID
             )
         );
+    }
+
+    function getNumOfTransactions() external view returns (uint) {
+        return tx_hashes.length;
+    }
+
+    function getCardInfo(
+        uint _transactionID, 
+        Transaction memory _transaction
+    ) external view onlyValidTransaction(_transactionID, _transaction) returns (bytes32) {
+        require(msg.sender == _transaction.buyer, "Only the buyer can retrieve item info.");
+        return _transaction.cardInfo_URI_hash;
     }
 
 }

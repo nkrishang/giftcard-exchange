@@ -43,31 +43,4 @@ describe("Market contract - Deployment",  function() {
             expect(await market.arbitrator()).to.equal(arbitrator.address);
         })
     });
-
-    // describe("Dispute Cases", function() {
-
-    //     describe("No dispute", function() {
-
-    //     });
-    
-    //     describe("Dispute won by seller but no appeal", function() {
-    
-    //     });
-    
-    //     describe("Dispute won by buyer but no appeal", function() {
-    
-    //     });
-    
-    //     describe("Dispute and appeal won by seller", function() {
-    
-    //     })
-    
-    //     describe("Dispute and appeal won by buyer", function() {
-    
-    //     })
-    
-    //     describe("Arbitrator refuses to arbitrate", function() {
-    
-    //     });
-    // })
 })
