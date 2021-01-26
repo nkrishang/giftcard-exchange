@@ -8,9 +8,9 @@
  * SPDX-License-Identifier: MIT
 **/
 
-import "./IArbitrable.sol";
-import "./IArbitrator.sol";
-import "./IEvidence.sol";
+import "./interface/IArbitrable.sol";
+import "./interface/IArbitrator.sol";
+import "./interface/IEvidence.sol";
 
 pragma solidity >=0.7.0;
 pragma experimental ABIEncoderV2;
@@ -90,7 +90,6 @@ contract Market is IArbitrable, IEvidence {
     }
 
     modifier onlyValidTransaction(uint _transactionID, Transaction memory _transaction) {
-        // console.logBytes32(tx_hashes[_transactionID - 1]);
         require(
             tx_hashes[_transactionID - 1] == hashTransactionState(_transaction), 
             "Transaction doesn't match stored hash."
@@ -126,7 +125,6 @@ contract Market is IArbitrable, IEvidence {
         bytes32 tx_hash = hashTransactionState(transaction);
         tx_hashes.push(tx_hash);
         uint transactionID = tx_hashes.length;
-        // console.logBytes32(tx_hashes[transactionID - 1]);
 
         emit TransactionStateUpdate(transactionID, transaction);
     }
@@ -154,8 +152,6 @@ contract Market is IArbitrable, IEvidence {
         _transaction.init = block.timestamp;
 
         tx_hashes[_transactionID - 1] =hashTransactionState(_transaction);
-        // console.logBytes32(tx_hashes[_transactionID - 1]);
-        // console.logBytes32(new_hash);
 
         emit TransactionStateUpdate(_transactionID, _transaction);
         emit MetaEvidence(_transactionID, _metaevidence);
@@ -171,7 +167,6 @@ contract Market is IArbitrable, IEvidence {
         Transaction memory _transaction
         ) external onlyValidTransaction(_transactionID, _transaction) {
 
-        // Write a succint filter statement later.
         require(msg.sender == _transaction.seller, "Only the seller can call a seller-withdraw function.");
         require(block.timestamp - _transaction.init > reclaimPeriod, "Cannot withdraw price while reclaim period is not over.");
         require(_transaction.status == Status.Pending, "Can only withdraw price if the transaction is in the pending state.");
@@ -545,7 +540,6 @@ contract Market is IArbitrable, IEvidence {
             refundAmount += arbitration.buyerArbitrationFee;
             refundAmount += arbitration.buyerAppealFee;
 
-            console.log(refundAmount);
             _transaction.buyer.transfer(refundAmount);
         }
 

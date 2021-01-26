@@ -11,18 +11,20 @@
  // This contract is for Hardhat testing only.
  // In production the arbitrable Market contract will set the KlerosLiquid Arbitrator contract as its arbitrator.
 
+/**
+ * @authors: [@ferittuncer, @hbarcelos]
+ * @reviewers: []
+ * @auditors: []
+ * @bounties: []
+ * @deployments: []
+ * SPDX-License-Identifier: MIT
+ */
 pragma solidity >=0.7;
 
 import "./interface/IArbitrator.sol";
-import "hardhat/console.sol";
 
-
-contract SimpleCentralizedArbitrator is IArbitrator {
+contract TestArbitrator is IArbitrator {
     address public owner = msg.sender;
-
-    bool public called; // test variable
-    uint testAppealPeriodStart;
-    uint testAppealPeriodEnd;
 
     struct Dispute {
         IArbitrable arbitrated;
@@ -33,21 +35,12 @@ contract SimpleCentralizedArbitrator is IArbitrator {
 
     Dispute[] public disputes;
 
-    function arbitrationCost(bytes memory _extraData) public override view returns (uint256) {
-        _extraData = ""; // dummy statement
-        if(!(called)) return 1 ether;
-        if(called) return 2 ether;
-    }
-
-    function changeCalled() external { // test function
-        require(msg.sender == owner, "Only owner");
-        called = true;
+    function arbitrationCost(bytes memory _extraData) public override pure returns (uint256) {
+        return 0.1 ether;
     }
 
     function appealCost(uint256 _disputeID, bytes memory _extraData) public override pure returns (uint256) {
-        _disputeID = 0; // dummy statement
-        _extraData = ""; // dummy statement
-        return 25 ether; // An unaffordable amount which practically avoids appeals.
+        return 2**250; // An unaffordable amount which practically avoids appeals.
     }
 
     function createDispute(uint256 _choices, bytes memory _extraData)
@@ -90,7 +83,7 @@ contract SimpleCentralizedArbitrator is IArbitrator {
         dispute.ruling = _ruling;
         dispute.status = DisputeStatus.Solved;
 
-        msg.sender.transfer(arbitrationCost(""));
+        msg.sender.send(arbitrationCost(""));
         dispute.arbitrated.rule(_disputeID, _ruling);
     }
 
@@ -98,13 +91,7 @@ contract SimpleCentralizedArbitrator is IArbitrator {
         require(msg.value >= appealCost(_disputeID, _extraData), "Not enough ETH to cover arbitration costs.");
     }
 
-    function appealPeriod(uint256 _disputeID) public override view returns (uint256 start, uint256 end) {
-        _disputeID = 0; // dummy statement
-        return (testAppealPeriodStart,testAppealPeriodEnd);
-    }
-
-    function setAppealPeriod() external {
-        testAppealPeriodStart = block.timestamp;
-        testAppealPeriodEnd = block.timestamp + 1 minutes; 
+    function appealPeriod(uint256 _disputeID) public override pure returns (uint256 start, uint256 end) {
+        return (0, 0);
     }
 }
