@@ -1,30 +1,26 @@
 /**
- * @authors: [@ferittuncer, @hbarcelos]
- * @reviewers: []
- * @auditors: []
- * @bounties: []
- * @deployments: []
+ * Test arbitrator for DGCX
+
+ * DGCX Market contract details: 
+ * ERC 792 implementation of a gift card exchange. ( ERC 792: https://github.com/ethereum/EIPs/issues/792 )
+ * For the idea, see: https://whimsical.com/crypto-gift-card-exchange-VQTH2F7wE8HMvw3DzcSgRi
+ * Neither the code, nor the concept is production ready.
+
  * SPDX-License-Identifier: MIT
- */
+**/
 
-
- // This contract is for Hardhat testing only.
- // In production the arbitrable Market contract will set the KlerosLiquid Arbitrator contract as its arbitrator.
-
-/**
- * @authors: [@ferittuncer, @hbarcelos]
- * @reviewers: []
- * @auditors: []
- * @bounties: []
- * @deployments: []
- * SPDX-License-Identifier: MIT
- */
 pragma solidity >=0.7;
 
 import "./interface/IArbitrator.sol";
 
 contract TestArbitrator is IArbitrator {
     address public owner = msg.sender;
+
+    uint public _arbitrationCost = 0.1 ether;
+    uint public _appealCost = 1 ether;
+
+    uint public testAppealPeriodStart;
+    uint public testAppealPeriodEnd;
 
     struct Dispute {
         IArbitrable arbitrated;
@@ -35,13 +31,17 @@ contract TestArbitrator is IArbitrator {
 
     Dispute[] public disputes;
 
-    function arbitrationCost(bytes memory _extraData) public override pure returns (uint256) {
-        return 0.1 ether;
+    function arbitrationCost(bytes memory _extraData) public override view returns (uint256) {
+        _extraData = "";
+        return _arbitrationCost;
     }
 
-    function appealCost(uint256 _disputeID, bytes memory _extraData) public override pure returns (uint256) {
-        return 2**250; // An unaffordable amount which practically avoids appeals.
+    function appealCost(uint256 _disputeID, bytes memory _extraData) public override view returns (uint256) {
+        _extraData = "";
+        _disputeID = 0;
+        return _appealCost;
     }
+
 
     function createDispute(uint256 _choices, bytes memory _extraData)
         public
@@ -83,7 +83,7 @@ contract TestArbitrator is IArbitrator {
         dispute.ruling = _ruling;
         dispute.status = DisputeStatus.Solved;
 
-        msg.sender.send(arbitrationCost(""));
+        msg.sender.transfer(arbitrationCost(""));
         dispute.arbitrated.rule(_disputeID, _ruling);
     }
 
@@ -91,7 +91,23 @@ contract TestArbitrator is IArbitrator {
         require(msg.value >= appealCost(_disputeID, _extraData), "Not enough ETH to cover arbitration costs.");
     }
 
-    function appealPeriod(uint256 _disputeID) public override pure returns (uint256 start, uint256 end) {
-        return (0, 0);
+    function appealPeriod(uint256 _disputeID) public override view returns (uint256 start, uint256 end) {
+        _disputeID = 0;
+        return (testAppealPeriodStart, testAppealPeriodEnd);
+    }
+
+    // Setter functions
+
+    function setArbitrationCost(uint _newCost) external {
+        _arbitrationCost = _newCost;
+    }
+
+    function setAppealCost(uint _newCost) external {
+        _appealCost = _newCost;
+    }
+
+    function setAppealPeriod() external {
+        testAppealPeriodStart = block.timestamp;
+        testAppealPeriodEnd = block.timestamp + 1 minutes; 
     }
 }
