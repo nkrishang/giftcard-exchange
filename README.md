@@ -1,64 +1,43 @@
 # DGCX - Decentralized Gift Card Exchange
 ## A peer-to-peer gift card marketplace.
 
+DGCX is a platform to buy and sell gift cards online. Transactions between buyers and sellers are based on an escrow smart contract. Any disputes from either party will be handled by [Kleros.io](https://kleros.io/). The DGCX application will function to facilitate valid online gift card transactions by: 
 
-### The What
-DGCX is a platform to buy and sell gift cards online. Transactions between buyers and sellers are based on an escrow smart contract. If there are ever any disputes from either the buyer, the seller or both, they will be handled by [Kleros.io](https://kleros.io/). The DGCX application will function to facilitate valid online gift card transactions by: 
+1. arbitrating disputes using a decentralized protocol like [Kleros.io](https://kleros.io/)
+2. requiring all parties to comply with an evidence submission user flow that makes it very costly for malicious parties to lie, cheat or exit-scam.
 
-1. requiring all parties to collateralize an equal amount in ETH to what they intend to buy/sell
-2. arbitrating disputes using a decentralized protocol like [Kleros.io](https://kleros.io/)
-3. implementing security into the DGCX user interface that makes it very difficult for either buyer or seller to lie, cheat or exit-scam (without getting caught).
+### How it all works - example scenario
 
+#### Listing a gift card for sale.
+1. Alice has a $50 Target Gift Card. She doesn't live near a Target so she decides to sell on DGCX (because she is fearful of getting scammed on r/giftcardexchange).
+- Alice lists her $50 Target GC on DGCX which she wants to sell for $40 worth of ETH.
+- To list the card, Alice must follow the evidence submission flow on the DGCX UI. This ensures that Alice's card indeed has the claimed balance at the time of listing. 
 
-### The Why
+#### Buying a gift card.
+2. Bob shops at Target all the time! He sees Alice's $50 Gift Card offer and selects it from the UI. He is then required to deposit the price of the card i.e. $40 worth of ETH into the DGCX escrow smart contract.
+- To purchase the card, Bob must follow the evidence submission flow on the DGCX UI. This ensures that the purchased card indeed has the claimed balance at the time of sale.
+- Bob receives the gift card information upon depositing the price. He may then verify the balance of the gift card he has purchased.
 
-[I](https://github.com/AlvaroLuken/giftcard-exchange), was **SCAMMED**. For context: I received a $50 Amazon gift card over the holidays. Seeing as I don't really use Amazon, I went online to see what my options were... that is when I stumbled onto the [GCX subreddit](https://www.reddit.com/r/giftcardexchange/) - the idea seemed pretty straightforward: trade your gift card with other Redditors! So I posted my offer in their required format: [H] Amazon $50 GC [W] $40 in ETH... H = Have ; W = Want... 
-
-Minutes later, I was reached out to by scammer-punk-ass [mattyfc](https://www.reddit.com/user/mattyfc/)... after 2 hours of chatting back on forth on Reddit's clunky messaging platform, he asked if I could go first seeing as I had the lower Reddit karma score and account age - I obliged and _surprise, surprise_ he all of a sudden stopped answering and was never to be seen again... the dood just plain ran off with my Amazon $50 as if I had just handed it to him on the street. 
-
-So back to _The Why_... in the next section called **The Problem We Solve**:
-
-
-### The Problem We Solve
-
-Currently, no viable options exist where a user can securely transact an off-chain asset like a gift card in exchange for payment in on-chain assets like BTC/ETH because:
-
-1. **Trust**: It is difficult to establish peer-to-peer trust on current platforms (ie, how do I know all parties will play by the rules)
-2. **Atomicity**: Alice must go first, leaving her vulnerable if Bob decides to exit. And vice-versa.
-3. **Privacy** : Centralized options harvest your data and offer no significant functionality/discount boost.
-4. **Functionality**: General platforms are adapted to meet ultra-specific UI needs... just like Reddit being clunkily adapted to be the world's main platform for peer-to-peer gift card exchanges.
-
-
-### Extra Features
-These are features that we also solve for online gift card transacting, but we will place them in the Extra Features section because we think of security first (so that no one else is ever scammed again)... everything else comes next:
-
-1. **Liquidity**: DGCX provides liquidity to gift card holders, doomed to spend their value only at one specific place... think about it this way: 
-- If you receive a gift card for a place you don't like, that is dead money on arrival. You can either re-gift your gift card to someone else or force yourself to purchase something from the place...
-2. **Arbitration**: When I was scammed, I reached out to the GCX subreddit mods and was... plainly ignored - what can they do anyway? DGCX offers Kleros arbitration, an online decentralized court protocol + specifically-designed UI that will provide a smooth option for either buyer or seller to dispute their case, should it be necessary. So rest assured, if you are an honest person using DGCX, you have _NOTHING_ to fear.
-3. MORE TBD
-
-
-### The How
-
-1. Alice has a $50 Target Gift Card... she doesn't live near a Target so she decides to sell on DGCX (because she is fearful of getting scammed on GCX)
-- Alice lists her $50 Target GC onto the DGCX application, which requires her to stake an amount equal to her Gift Card offer value... she will sell it for $40 so she collateralizes $40 worth of ETH...
-- Alice's Target Gift Card is now listed! YAY :)
-
-2. Bob shops at Target all the time! He sees Alice's $50 Gift Card offer, at a 20% discount, and selects it from the UI... he is then required to deposit $40 worth of ETH... Bob purchases and receives the gift card.
-
+#### No disputes case
 3. If both parties played fair, the arbitration period ends and:
 - Bob bought a $50 Target Gift Card at a 20% discount.
-- Alice liquidated her Target Gift Card and receives Bob's payment (and her collateral is liberated back to her DGCX account).
+- Alice liquidated her Target Gift Card and receives Bob's payment (she is able to withdraw the gift card price from the DGCX contract).
 
-4. If either party attempts a scam, the buyer or seller can choose to dispute within the arbitration period -> this brings the case in front of the decentralized Kleros court which will delegate based on standardized evidence; the courts will make a decision and the collateral of the attempted-scammer party will be liberated to the victim party.
+#### In case of a dispute
+4. If either party attempts a scam, the buyer or seller can choose to dispute within the arbitration period -> this brings the case in front of the decentralized Kleros court which will delegate based on standardized evidence.
+- At the time of purchase, Bob gets a 6 hour reclaim window, which starts as soon as he purchases the gift card. Within that window, Bob may dispute the transaction by depositing an arbitration fee, determined by Kleros, the arbitrator.
+- To respond to the dispute, Alice must deposit the arbitration fee in the DGCX contract within the fee deposit period of 1 day (started when Bob deposits his fee).
+- If Alice does not respond in time, Bob is reimbursed his arbitration fee and the price of the gift card. No Kleros dispute is called.
+- If Alice responds to the dispute, a dispute is created in the Kleros arbitrator contract. The winner of the arbitration is reimbursed their arbitration fee plus the price of the gift card.
+- A ruling given on a dispute can be appealed by either party invovled by depositing an appeal fee within a appeal fee deposit period set by Kleros. The appeal fee increases exponentially for each subsequent ruling to deter a malicious party from continuing to appeal an unfavourable ruling.
 
+## Technical
 
+The repo is a [hardhat](https://hardhat.org/) project. To run the tests - 
+- Clone the repo by running `git clone https://github.com/nkrishang/giftcard-exchange` in the terminal.
+- Run `npm install` to install the project dependencies.
+- Run `npx hardhat test [path of test file]` to run the desired tests.
 
-### Current competitors vs. DGCX
+`Market.sol` is the main smart contract of the platform. It is an [ERC 792](https://developer.kleros.io/en/latest/index.html) and [ERC 1497](https://developer.kleros.io/en/latest/erc-1497.html) compliant arbitrable escrow contract.
 
-| Current Options  | DGCX |
-| ------------- |:-------------:|
-| Buyers and sellers left vulnerable to scams - no trust/confidence model available     | Collateral establishes shared risk for buyer/seller |
-| Arbitration is non-existent | Kleros decentralized arbitration  |
-| Data harvesting    | only MetaMask needed |
-|Current platforms offer only clunky non-specific UI solutions| Specific UI for trusted exchange with decentralized arbitration |
+`SimpleCentralizedArbitrator.sol` is an [ERC 792](https://developer.kleros.io/en/latest/index.html) compliant arbitrator contract. This contract acts as the arbitrator for `Market.sol` in the tests. In production, the arbitrable contract `Market.sol` will set the [Kleros arbitrator contract on mainnet](https://etherscan.io/address/0x988b3a538b618c7a603e1c11ab82cd16dbe28069#code). 

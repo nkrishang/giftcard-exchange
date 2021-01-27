@@ -34,14 +34,14 @@ describe("Market contract - Buying flow",  function() {
         market = await MarketFactory.deploy(arbitrator.address);
 
 
-        // Shared logic by tests - setup for listing the gift card to be bought by the buyer.
+        // Shared logic by tests - listing the gift card to be bought by the buyer.
         price = ethers.utils.parseEther("1");
         cardInfo_hash = ethers.utils.keccak256(ethers.utils.formatBytes32String("giftcard information"));
         metaevidence = "ERC 1497 compliant metavidence";
 
         listEvent = new Promise((resolve, reject) => {
 
-            market.on("TransactionCreated", (_transactionID, _transactionObj, _arbitration, event) => {
+            market.on("TransactionStateUpdate", (_transactionID, _transactionObj, event) => {
                 
                 event.removeListener();
 
@@ -52,45 +52,28 @@ describe("Market contract - Buying flow",  function() {
             })
 
             setTimeout(() => {
-                reject(new Error("TransactionCreated event timeout."));
+                reject(new Error("TransactionStateUpdate event timeout."));
             }, 60000);
         })
+
+        await market.connect(seller).listNewCard(cardInfo_hash, price);
+        await listEvent;
     });
-
-    describe("Deployment", function() {
-
-        it("Should set the right owner", async function () {
-            expect(await market.owner()).to.equal(owner.address);
-        });
-
-        it("Should set SimpleCentralizedArbitrator as the arbitrator", async function () {
-            expect(await market.arbitrator()).to.equal(arbitrator.address);
-        })
-    })
 
     describe("Buying a card", function() {
 
 
         it("Should emit Transaction state update event when seller buys a card", async function() {
 
-            await market.connect(seller).listNewCard(cardInfo_hash, price);
-            await listEvent;
-
             await expect(market.connect(buyer).buyCard(transactionID, transactionObj, metaevidence, {value: price})).to.emit(market, "TransactionStateUpdate");
         })
 
         it("Should emit MetaEvidence event when seller buys a card", async function() {
 
-            await market.connect(seller).listNewCard(cardInfo_hash, price);
-            await listEvent;
-
             await expect(market.connect(buyer).buyCard(transactionID, transactionObj, metaevidence, {value: price})).to.emit(market, "MetaEvidence");
         })
         
         it("Should emit a Transaction event with the updated transaction state", async function() {
-
-            await market.connect(seller).listNewCard(cardInfo_hash, price);
-            await listEvent;
 
             let buyEvent = new Promise((resolve, reject) => {
 
@@ -131,9 +114,6 @@ describe("Market contract - Buying flow",  function() {
 
         it("Should emit a Metaevidence event with the metaevidence", async function() {
 
-            await market.connect(seller).listNewCard(cardInfo_hash, price);
-            await listEvent;
-
             let metaevidenceEvent = new Promise((resolve, reject) => {
 
                 market.on("MetaEvidence", (_transactionID, _metaevidence, event) => {
@@ -156,9 +136,6 @@ describe("Market contract - Buying flow",  function() {
         })
 
         it("Should not let the buyer buy a card for less than the price (revert case)", async function() {
-
-            await market.connect(seller).listNewCard(cardInfo_hash, price);
-            await listEvent;
 
             const buyerLowPrice = ethers.utils.parseEther("0.9");
 

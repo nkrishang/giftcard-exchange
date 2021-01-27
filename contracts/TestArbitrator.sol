@@ -1,28 +1,26 @@
 /**
- * @authors: [@ferittuncer, @hbarcelos]
- * @reviewers: []
- * @auditors: []
- * @bounties: []
- * @deployments: []
+ * Test arbitrator for DGCX
+
+ * DGCX Market contract details: 
+ * ERC 792 implementation of a gift card exchange. ( ERC 792: https://github.com/ethereum/EIPs/issues/792 )
+ * For the idea, see: https://whimsical.com/crypto-gift-card-exchange-VQTH2F7wE8HMvw3DzcSgRi
+ * Neither the code, nor the concept is production ready.
+
  * SPDX-License-Identifier: MIT
- */
-
-
- // This contract is for Hardhat testing only.
- // In production the arbitrable Market contract will set the KlerosLiquid Arbitrator contract as its arbitrator.
+**/
 
 pragma solidity >=0.7;
 
 import "./interface/IArbitrator.sol";
-import "hardhat/console.sol";
 
-
-contract SimpleCentralizedArbitrator is IArbitrator {
+contract TestArbitrator is IArbitrator {
     address public owner = msg.sender;
 
-    bool public called; // test variable
-    uint testAppealPeriodStart;
-    uint testAppealPeriodEnd;
+    uint public _arbitrationCost = 0.1 ether;
+    uint public _appealCost = 1 ether;
+
+    uint public testAppealPeriodStart;
+    uint public testAppealPeriodEnd;
 
     struct Dispute {
         IArbitrable arbitrated;
@@ -34,21 +32,16 @@ contract SimpleCentralizedArbitrator is IArbitrator {
     Dispute[] public disputes;
 
     function arbitrationCost(bytes memory _extraData) public override view returns (uint256) {
-        _extraData = ""; // dummy statement
-        if(!(called)) return 1 ether;
-        if(called) return 2 ether;
+        _extraData = "";
+        return _arbitrationCost;
     }
 
-    function changeCalled() external { // test function
-        require(msg.sender == owner, "Only owner");
-        called = true;
+    function appealCost(uint256 _disputeID, bytes memory _extraData) public override view returns (uint256) {
+        _extraData = "";
+        _disputeID = 0;
+        return _appealCost;
     }
 
-    function appealCost(uint256 _disputeID, bytes memory _extraData) public override pure returns (uint256) {
-        _disputeID = 0; // dummy statement
-        _extraData = ""; // dummy statement
-        return 25 ether; // An unaffordable amount which practically avoids appeals.
-    }
 
     function createDispute(uint256 _choices, bytes memory _extraData)
         public
@@ -99,8 +92,18 @@ contract SimpleCentralizedArbitrator is IArbitrator {
     }
 
     function appealPeriod(uint256 _disputeID) public override view returns (uint256 start, uint256 end) {
-        _disputeID = 0; // dummy statement
-        return (testAppealPeriodStart,testAppealPeriodEnd);
+        _disputeID = 0;
+        return (testAppealPeriodStart, testAppealPeriodEnd);
+    }
+
+    // Setter functions
+
+    function setArbitrationCost(uint _newCost) external {
+        _arbitrationCost = _newCost;
+    }
+
+    function setAppealCost(uint _newCost) external {
+        _appealCost = _newCost;
     }
 
     function setAppealPeriod() external {

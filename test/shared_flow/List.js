@@ -32,22 +32,11 @@ describe("Market contract - Listing flow",  function() {
         metaevidence = "ERC 1497 compliant metavidence";
     });
 
-    describe("Deployment", function() {
-
-        it("Should set the right owner", async function () {
-            expect(await market.owner()).to.equal(owner.address);
-        });
-
-        it("Should set SimpleCentralizedArbitrator as the arbitrator", async function () {
-            expect(await market.arbitrator()).to.equal(arbitrator.address);
-        })
-    })
-
     describe("Listing a giftcard", function() {
 
         it("Should emit a Transaction event when a giftcard is listed", async function() {
             let price = ethers.utils.parseEther("1");
-            await expect(market.listNewCard(cardInfo_hash, price)).to.emit(market, "TransactionCreated");
+            await expect(market.listNewCard(cardInfo_hash, price)).to.emit(market, "TransactionStateUpdate");
         })
 
         it("Should emit a Transaction event with the updated transaction state", async function() {
@@ -55,15 +44,13 @@ describe("Market contract - Listing flow",  function() {
             let price = ethers.utils.parseEther("1");
 
             let transactionPromise = new Promise((resolve, reject) => {
-                market.on("TransactionCreated", (_transactionID, _transaction, _arbitration, event) => {
+                market.on("TransactionStateUpdate", (_transactionID, _transaction, event) => {
                     
                     event.removeListener();
 
                     // Check if the event parameters are retrieved correctly.
 
                     expect(_transactionID.toString()).to.equal(numOfTransactions.toString());
-                    expect(_arbitration[0].toString()).to.equal(numOfTransactions.toString());
-
                     resolve();
                 })
 
@@ -73,7 +60,7 @@ describe("Market contract - Listing flow",  function() {
             })
 
             await market.listNewCard(cardInfo_hash, price);
-            const numOfTransactions = await market.getNumOfTransactions();
+            const numOfTransactions = await market.getNumOfTransactions()
 
             await transactionPromise;
         })
