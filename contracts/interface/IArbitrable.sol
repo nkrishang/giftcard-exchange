@@ -1,8 +1,7 @@
 /**
  * See: https://github.com/kleros/erc-792/blob/master/contracts/IArbitrable.sol
- * SPDX-License-Identifier: MIT
  */
-pragma solidity >=0.7;
+pragma solidity >=0.7.0;
 
 import "./IArbitrator.sol";
 

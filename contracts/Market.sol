@@ -1,5 +1,5 @@
 /**
- * @authors: [@nkirshang]
+ * https://gifti.io
 
  * ERC 792 implementation of a gift card exchange. ( ERC 792: https://github.com/ethereum/EIPs/issues/792 )
  * For the idea, see: https://whimsical.com/crypto-gift-card-exchange-VQTH2F7wE8HMvw3DzcSgRi
@@ -14,8 +14,6 @@ import "./interface/IEvidence.sol";
 
 pragma solidity >=0.7.0;
 pragma experimental ABIEncoderV2;
-
-import "hardhat/console.sol";
 
 contract Market is IArbitrable, IEvidence {
 
