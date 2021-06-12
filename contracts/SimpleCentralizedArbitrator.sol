@@ -1,21 +1,14 @@
-/**
- * @authors: [@ferittuncer, @hbarcelos]
- * @reviewers: []
- * @auditors: []
- * @bounties: []
- * @deployments: []
- * SPDX-License-Identifier: MIT
- */
 
+// https://gifti.io
 
- // This contract is for Hardhat testing only.
- // In production the arbitrable Market contract will set the KlerosLiquid Arbitrator contract as its arbitrator.
+// This contract is for Hardhat testing only.
+// In production the arbitrable Market contract will set the KlerosLiquid Arbitrator contract as its arbitrator.
+
+//SPDX-License-Identifier: MIT
 
 pragma solidity >=0.7;
 
 import "./interface/IArbitrator.sol";
-import "hardhat/console.sol";
-
 
 contract SimpleCentralizedArbitrator is IArbitrator {
     address public owner = msg.sender;
